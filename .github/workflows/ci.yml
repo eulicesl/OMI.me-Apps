@@ -1,0 +1,51 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build-and-lint:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Use Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install root tools
+        run: npm i -g prettier eslint
+
+      - name: Install Brain deps
+        run: |
+          cd Brain
+          npm ci
+
+      - name: Install Friend deps
+        run: |
+          cd Friend
+          npm ci
+
+      - name: Install Jarvis deps
+        run: |
+          cd Jarvis
+          npm ci
+
+      - name: Prettier check
+        run: npx prettier . --check
+
+      - name: ESLint check
+        run: npx eslint . --ext .js
+
+      - name: Dev sanity check
+        run: npm run dev:check
+
+      - name: Security audit (non-blocking)
+        continue-on-error: true
+        run: |
+          cd Brain && npm audit --audit-level=high || true

@@ -4,8 +4,9 @@ services:
   brain:
     image: ghcr.io/neooriginal/omi.me-apps/brain:latest
     container_name: omi-brain
+    profiles: ["app"]
     ports:
-      - "3000:3000"
+      - '3000:3000'
     environment:
       - NODE_ENV=production
       - PORT=3000
@@ -18,17 +19,22 @@ services:
     networks:
       - omi-network
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:3000/"]
+      test: ['CMD', 'curl', '-fsS', 'http://localhost:3000/healthz']
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 40s
+    logging:
+      driver: 'json-file'
+      options:
+        max-size: '10m'
+        max-file: '5'
 
   friend:
     image: ghcr.io/neooriginal/omi.me-apps/friend:latest
     container_name: omi-friend
     ports:
-      - "5000:5000"
+      - '5000:5000'
     environment:
       - NODE_ENV=production
       - PORT=5000
@@ -39,7 +45,7 @@ services:
     networks:
       - omi-network
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:5000/"]
+      test: ['CMD', 'curl', '-f', 'http://localhost:5000/']
       interval: 30s
       timeout: 10s
       retries: 3
@@ -49,7 +55,7 @@ services:
     image: ghcr.io/neooriginal/omi.me-apps/jarvis:latest
     container_name: omi-jarvis
     ports:
-      - "8000:8000"
+      - '8000:8000'
     environment:
       - NODE_ENV=production
       - PORT=8000
@@ -59,7 +65,7 @@ services:
     networks:
       - omi-network
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/"]
+      test: ['CMD', 'curl', '-f', 'http://localhost:8000/']
       interval: 30s
       timeout: 10s
       retries: 3
@@ -72,4 +78,4 @@ networks:
 volumes:
   brain_data:
   friend_data:
-  jarvis_data: 
+  jarvis_data:

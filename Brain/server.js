@@ -15,42 +15,102 @@ const session = require('express-session');
 const crypto = require('crypto');
 const sanitizeHtml = require('sanitize-html');
 const { URL } = require('url');
-const fetch = require('node-fetch');
+const helmet = require('helmet');
+const rateLimit = require('express-rate-limit');
+const compression = require('compression');
+const winston = require('winston');
+
+// Environment variable validation
+function validateEnvironmentVariables() {
+  const requiredEnvVars = [
+    'SUPABASE_URL',
+    'SUPABASE_ANON_KEY',
+    'OPENROUTER_API_KEY'
+  ];
+
+  const missingVars = requiredEnvVars.filter(varName => !process.env[varName]);
+  
+  if (missingVars.length > 0) {
+    logger.error('Missing required environment variables:', { missingVars });
+    process.exit(1);
+  }
+
+  // Validate URLs
+  try {
+    new URL(process.env.SUPABASE_URL);
+  } catch (error) {
+    logger.error('Invalid SUPABASE_URL format');
+    process.exit(1);
+  }
+
+  logger.info('Environment variables validated successfully');
+}
+
+// Configure Winston logger
+const logger = winston.createLogger({
+  level: process.env.LOG_LEVEL || 'info',
+  format: winston.format.combine(
+    winston.format.timestamp(),
+    winston.format.errors({ stack: true }),
+    winston.format.json()
+  ),
+  defaultMeta: { service: 'brain-app' },
+  transports: [
+    // Write all logs with importance level of 'error' or less to 'error.log'
+    new winston.transports.File({ filename: 'logs/error.log', level: 'error' }),
+    // Write all logs to 'combined.log'
+    new winston.transports.File({ filename: 'logs/combined.log' }),
+  ],
+});
+
+// Add console transport for development
+if (process.env.NODE_ENV !== 'production') {
+  logger.add(new winston.transports.Console({
+    format: winston.format.combine(
+      winston.format.colorize(),
+      winston.format.simple()
+    )
+  }));
+}
+
+// Validate environment variables on startup
+validateEnvironmentVariables();
 
 // Initialize Supabase client
-const supabase = createClient(
-    process.env.SUPABASE_URL,
-    process.env.SUPABASE_ANON_KEY
-);
+const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_ANON_KEY);
 
 // Generic error handler to prevent leaking sensitive info
 function handleDatabaseError(error, operation) {
-    console.error(`Database error during ${operation}:`, error);
-    return {
-        status: 500,
-        error: 'A database error occurred. Please try again later.'
-    };
+  logger.error(`Database error during ${operation}`, {
+    error: error.message,
+    stack: error.stack,
+    operation
+  });
+  return {
+    status: 500,
+    error: 'A database error occurred. Please try again later.',
+  };
 }
 
 // Initialize database tables
 async function createTables() {
-    try {
-        console.log('Setting up Brain app tables...');
+  try {
+    logger.info('Setting up Brain app tables...');
 
-        // Create brain_users table
-        const { error: error1 } = await supabase.rpc('exec_sql', {
-            sql_query: `
+    // Create brain_users table
+    const { error: error1 } = await supabase.rpc('exec_sql', {
+      sql_query: `
                 CREATE TABLE IF NOT EXISTS brain_users (
                     id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
                     uid TEXT UNIQUE NOT NULL,
                     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
                 );
-            `
-        });
+            `,
+    });
 
-        // Create memory_nodes table
-        const { error: error2 } = await supabase.rpc('exec_sql', {
-            sql_query: `
+    // Create memory_nodes table
+    const { error: error2 } = await supabase.rpc('exec_sql', {
+      sql_query: `
                 CREATE TABLE IF NOT EXISTS memory_nodes (
                     id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
                     uid TEXT NOT NULL,
@@ -61,12 +121,12 @@ async function createTables() {
                     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
                     UNIQUE(uid, node_id)
                 );
-            `
-        });
+            `,
+    });
 
-        // Create memory_relationships table
-        const { error: error3 } = await supabase.rpc('exec_sql', {
-            sql_query: `
+    // Create memory_relationships table
+    const { error: error3 } = await supabase.rpc('exec_sql', {
+      sql_query: `
                 CREATE TABLE IF NOT EXISTS memory_relationships (
                     id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
                     uid TEXT NOT NULL,
@@ -75,145 +135,278 @@ async function createTables() {
                     action TEXT,
                     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
                 );
-            `
-        });
+            `,
+    });
 
-        if (error1 || error2 || error3) {
-            console.log('Tables may already exist or exec_sql function not found.');
-            console.log('Please run the setup-supabase.sql script in your Supabase SQL editor.');
-        } else {
-            console.log('Brain app tables created successfully!');
-        }
-    } catch (err) {
-        console.log('Auto-table creation failed. Please run setup-supabase.sql manually.');
-        console.log('Error:', err.message);
+    if (error1 || error2 || error3) {
+      logger.info('Tables may already exist or exec_sql function not found.');
+      logger.info('Please run the setup-supabase.sql script in your Supabase SQL editor.');
+    } else {
+      logger.info('Brain app tables created successfully!');
     }
+  } catch (err) {
+    logger.warn('Auto-table creation failed. Please run setup-supabase.sql manually.', {
+      error: err.message
+    });
+  }
 }
 
-createTables().catch(console.error);
+createTables().catch(error => logger.error('Table creation failed', { error: error.message }));
 
 const app = express();
 const port = process.env.PORT || 3000;
 
+// Rate limiting configurations
+const generalLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 100, // Limit each IP to 100 requests per windowMs
+  message: {
+    error: 'Too many requests from this IP, please try again later.',
+    retryAfter: '15 minutes'
+  },
+  standardHeaders: true,
+  legacyHeaders: false,
+  handler: (req, res) => {
+    logger.warn('Rate limit exceeded', {
+      ip: req.ip,
+      userAgent: req.get('User-Agent'),
+      endpoint: req.path
+    });
+    res.status(429).json({
+      error: 'Too many requests from this IP, please try again later.',
+      retryAfter: '15 minutes'
+    });
+  }
+});
+
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 10, // Stricter limit for auth endpoints
+  message: {
+    error: 'Too many authentication attempts, please try again later.',
+    retryAfter: '15 minutes'
+  },
+  standardHeaders: true,
+  legacyHeaders: false,
+  skipSuccessfulRequests: true,
+  handler: (req, res) => {
+    logger.warn('Auth rate limit exceeded', {
+      ip: req.ip,
+      userAgent: req.get('User-Agent'),
+      endpoint: req.path
+    });
+    res.status(429).json({
+      error: 'Too many authentication attempts, please try again later.',
+      retryAfter: '15 minutes'
+    });
+  }
+});
+
+const apiLimiter = rateLimit({
+  windowMs: 1 * 60 * 1000, // 1 minute
+  max: 30, // Limit API calls
+  message: {
+    error: 'API rate limit exceeded, please slow down.',
+    retryAfter: '1 minute'
+  },
+  standardHeaders: true,
+  legacyHeaders: false,
+  handler: (req, res) => {
+    logger.warn('API rate limit exceeded', {
+      ip: req.ip,
+      userAgent: req.get('User-Agent'),
+      endpoint: req.path
+    });
+    res.status(429).json({
+      error: 'API rate limit exceeded, please slow down.',
+      retryAfter: '1 minute'
+    });
+  }
+});
+
 // Initialize OpenAI
 const openai = new OpenAI({
-    baseURL: "https://openrouter.ai/api/v1",
-    apiKey: process.env.OPENROUTER_API_KEY
+  baseURL: 'https://openrouter.ai/api/v1',
+  apiKey: process.env.OPENROUTER_API_KEY,
+});
+
+// Security middleware
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      styleSrc: ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com'],
+      fontSrc: ["'self'", 'https://fonts.gstatic.com'],
+      scriptSrc: ["'self'", "'unsafe-inline'"],
+      imgSrc: ["'self'", 'data:', 'https:'],
+      connectSrc: ["'self'", 'https:'],
+    },
+  },
+  crossOriginEmbedderPolicy: false
+}));
+
+app.use(compression());
+app.use(generalLimiter);
+
+// Request logging middleware
+app.use((req, res, next) => {
+  const start = Date.now();
+  
+  res.on('finish', () => {
+    const duration = Date.now() - start;
+    logger.info('HTTP Request', {
+      method: req.method,
+      url: req.url,
+      status: res.statusCode,
+      duration: `${duration}ms`,
+      ip: req.ip,
+      userAgent: req.get('User-Agent')
+    });
+  });
+  
+  next();
 });
 
 // Middleware
-app.use(cors({
+app.use(
+  cors({
     origin: [
-        process.env.FRONTEND_URL_BRAIN || 'http://localhost:3000',
-        'http://localhost:3000',
-        'https://brain.neoserver.dev'
+      process.env.FRONTEND_URL_BRAIN || 'http://localhost:3000',
+      'http://localhost:3000',
+      'https://brain.neoserver.dev',
     ],
-    credentials: true
-}));
+    credentials: true,
+  }),
+);
 app.use(bodyParser.json({ limit: '10mb' }));
 app.use(bodyParser.urlencoded({ limit: '10mb', extended: true }));
 app.use(cookieParser());
-app.use(session({
+app.use(
+  session({
     secret: process.env.SESSION_SECRET || crypto.randomBytes(64).toString('hex'),
     resave: false,
     saveUninitialized: false,
     cookie: {
-        secure: process.env.NODE_ENV === 'production' || process.env.FRONTEND_URL_BRAIN?.includes('https'),
-        httpOnly: true,
-        maxAge: 24 * 60 * 60 * 1000, // 24 hours
-        sameSite: 'lax' // Use lax for all environments to avoid cross-site issues
-        // Removed domain setting as it can cause issues with subdomains
-    }
-}));
+      secure:
+        process.env.NODE_ENV === 'production' || process.env.FRONTEND_URL_BRAIN?.includes('https'),
+      httpOnly: true,
+      maxAge: 24 * 60 * 60 * 1000, // 24 hours
+      sameSite: 'lax', // Use lax for all environments to avoid cross-site issues
+      // Removed domain setting as it can cause issues with subdomains
+    },
+  }),
+);
 app.use(express.static('public'));
 
-app.get("/privacy", (req, res) => {
-    res.sendFile(__dirname + '/public/privacy.html');
+// Health and readiness endpoints for production orchestration
+app.get('/healthz', (_req, res) => {
+  res.status(200).json({ status: 'ok' });
+});
+
+app.get('/readyz', async (_req, res) => {
+  try {
+    const supabaseHealthUrl = (process.env.SUPABASE_URL || '').replace(/\/$/, '') + '/auth/v1/health';
+    if (!process.env.SUPABASE_URL) {
+      logger.warn('Readiness check failed: SUPABASE_URL not set');
+      return res.status(503).json({ ready: false });
+    }
+
+    await axios.get(supabaseHealthUrl, { timeout: 1500 });
+    return res.status(200).json({ ready: true });
+  } catch (error) {
+    logger.warn('Readiness check failed', { error: error.message });
+    return res.status(503).json({ ready: false });
+  }
+});
+
+app.get('/privacy', (req, res) => {
+  res.sendFile(__dirname + '/public/privacy.html');
 });
 
 // Load memory graph from database
 async function loadMemoryGraph(uid) {
-    const nodes = new Map();
-    const relationships = [];
+  const nodes = new Map();
+  const relationships = [];
 
-    try {
-        // Load nodes
-        const { data: dbNodes } = await supabase
-            .from('memory_nodes')
-            .select()
-            .eq('uid', uid);
+  try {
+    // Load nodes
+    const { data: dbNodes } = await supabase.from('memory_nodes').select().eq('uid', uid);
 
-        dbNodes.forEach(node => {
-            nodes.set(node.node_id, {
-                id: node.node_id,
-                type: node.type,
-                name: node.name,
-                connections: node.connections
-            });
-        });
+    dbNodes.forEach((node) => {
+      nodes.set(node.node_id, {
+        id: node.node_id,
+        type: node.type,
+        name: node.name,
+        connections: node.connections,
+      });
+    });
 
-        // Load relationships
-        const { data: dbRelationships } = await supabase
-            .from('memory_relationships')
-            .select()
-            .eq('uid', uid);
+    // Load relationships
+    const { data: dbRelationships } = await supabase
+      .from('memory_relationships')
+      .select()
+      .eq('uid', uid);
 
-        relationships.push(...dbRelationships.map(rel => ({
-            source: rel.source,
-            target: rel.target,
-            action: rel.action
-        })));
+    relationships.push(
+      ...dbRelationships.map((rel) => ({
+        source: rel.source,
+        target: rel.target,
+        action: rel.action,
+      })),
+    );
 
-        return { nodes, relationships };
-    } catch (error) {
-        console.error('Error loading memory graph:', error);
-        throw error;
-    }
+    return { nodes, relationships };
+  } catch (error) {
+    logger.error('Error loading memory graph', {
+      error: error.message,
+      uid
+    });
+    throw error;
+  }
 }
 
 // Save memory graph to database
 async function saveMemoryGraph(uid, newData) {
-    try {
-        // Save new nodes
-        for (const entity of newData.entities) {
-            await supabase
-                .from('memory_nodes')
-                .upsert([
-                    {
-                        uid: uid,
-                        node_id: entity.id,
-                        type: entity.type,
-                        name: entity.name,
-                        connections: entity.connections
-                    }
-                ]);
-        }
-
-        // Save new relationships
-        for (const rel of newData.relationships) {
-            await supabase
-                .from('memory_relationships')
-                .upsert([
-                    {
-                        uid: uid,
-                        source: rel.source,
-                        target: rel.target,
-                        action: rel.action
-                    }
-                ]);
-        }
-    } catch (error) {
-        throw error;
+  try {
+    // Save new nodes
+    for (const entity of newData.entities) {
+      await supabase.from('memory_nodes').upsert([
+        {
+          uid: uid,
+          node_id: entity.id,
+          type: entity.type,
+          name: entity.name,
+          connections: entity.connections,
+        },
+      ]);
     }
+
+    // Save new relationships
+    for (const rel of newData.relationships) {
+      await supabase.from('memory_relationships').upsert([
+        {
+          uid: uid,
+          source: rel.source,
+          target: rel.target,
+          action: rel.action,
+        },
+      ]);
+    }
+  } catch (error) {
+    throw error;
+  }
 }
 
 // Process chat with efficient context
 async function processChatWithGPT(uid, message) {
-    const memoryGraph = await getcontextArray(uid);
-    const contextString = `People and Places: ${Array.from(memoryGraph.nodes.values()).map(n => n.name).join(', ')}\n` +
-        `Facts: ${memoryGraph.relationships.map(r => `${r.source} ${r.action} ${r.target}`).join('. ')}`;
+  const memoryGraph = await getcontextArray(uid);
+  const contextString =
+    `People and Places: ${Array.from(memoryGraph.nodes.values())
+      .map((n) => n.name)
+      .join(', ')}\n` +
+    `Facts: ${memoryGraph.relationships.map((r) => `${r.source} ${r.action} ${r.target}`).join('. ')}`;
 
-    const systemPrompt = `You are a friendly and engaging AI companion with access to these memories:
+  const systemPrompt = `You are a friendly and engaging AI companion with access to these memories:
 
 ${contextString}
 
@@ -244,42 +437,48 @@ When responding:
    - Suggest possibilities and connections
    - Show curiosity about what you're discussing
 
-Memory Status: ${memoryGraph.nodes.length > 0 ?
-            `I've got quite a collection here - ${memoryGraph.nodes.length} memories all connected in interesting ways!` :
-            "I don't have any memories stored yet, but I'm excited to learn!"}`;
+Memory Status: ${
+    memoryGraph.nodes.length > 0
+      ? `I've got quite a collection here - ${memoryGraph.nodes.length} memories all connected in interesting ways!`
+      : "I don't have any memories stored yet, but I'm excited to learn!"
+  }`;
 
-    try {
-        const completion = await openai.chat.completions.create({
-            model: "openai/gpt-4o",
-            messages: [
-                {
-                    role: "system",
-                    content: systemPrompt
-                },
-                {
-                    role: "user",
-                    content: message
-                }
-            ],
-            temperature: 0.7,
-            max_tokens: 150
-        });
+  try {
+    const completion = await openai.chat.completions.create({
+      model: 'openai/gpt-4o',
+      messages: [
+        {
+          role: 'system',
+          content: systemPrompt,
+        },
+        {
+          role: 'user',
+          content: message,
+        },
+      ],
+      temperature: 0.7,
+      max_tokens: 150,
+    });
 
-        return completion.choices[0].message.content;
-    } catch (error) {
-        console.error('Error processing chat:', error);
-        throw error;
-    }
+    return completion.choices[0].message.content;
+  } catch (error) {
+    logger.error('Error processing chat', {
+      error: error.message,
+      uid,
+      messageLength: message?.length || 0
+    });
+    throw error;
+  }
 }
 
 async function getcontextArray(uid) {
-    const memoryGraph = await loadMemoryGraph(uid);
-    return memoryGraph;
+  const memoryGraph = await loadMemoryGraph(uid);
+  return memoryGraph;
 }
 
 // Process text with GPT-4 to extract entities and relationships
 async function processTextWithGPT(text) {
-    const prompt = `Analyze this text like a human brain processing new information. Extract key entities and their relationships, focusing on logical connections and cognitive patterns. Format as JSON:
+  const prompt = `Analyze this text like a human brain processing new information. Extract key entities and their relationships, focusing on logical connections and cognitive patterns. Format as JSON:
 
     {
         "entities": [
@@ -333,483 +532,554 @@ async function processTextWithGPT(text) {
 
     Return empty arrays if no meaningful patterns found.`;
 
-    try {
-        const completion = await openai.chat.completions.create({
-            model: "openai/gpt-4o",
-            messages: [
-                {
-                    role: "system",
-                    content: "You are a precise entity and relationship extraction system. Extract key information and format it exactly as requested. Return only valid JSON."
-                },
-                {
-                    role: "user",
-                    content: prompt
-                }
-            ],
-            response_format: { type: "json_object" },
-            temperature: 0.45,
-            max_tokens: 1000
-        });
+  try {
+    const completion = await openai.chat.completions.create({
+      model: 'openai/gpt-4o',
+      messages: [
+        {
+          role: 'system',
+          content:
+            'You are a precise entity and relationship extraction system. Extract key information and format it exactly as requested. Return only valid JSON.',
+        },
+        {
+          role: 'user',
+          content: prompt,
+        },
+      ],
+      response_format: { type: 'json_object' },
+      temperature: 0.45,
+      max_tokens: 1000,
+    });
 
-        return JSON.parse(completion.choices[0].message.content);
-    } catch (error) {
-        console.error('Error processing text with GPT:', error);
-        throw error;
-    }
+    return JSON.parse(completion.choices[0].message.content);
+  } catch (error) {
+    logger.error('Error processing text with GPT', {
+      error: error.message,
+      textLength: text?.length || 0
+    });
+    throw error;
+  }
 }
 
 // Authentication middleware
 function requireAuth(req, res, next) {
-    console.log('RequireAuth - Session ID:', req.sessionID);
-    console.log('RequireAuth - Session data:', req.session);
-    console.log('RequireAuth - Cookies:', req.headers.cookie);
+  if (process.env.NODE_ENV !== 'production') {
+    logger.debug('RequireAuth check', {
+      sessionId: req.sessionID,
+      hasSession: !!req.session,
+      hasUserId: !!(req.session && req.session.userId)
+    });
+  }
 
-    if (!req.session || !req.session.userId) {
-        console.log('RequireAuth - Authentication failed: No session or userId');
-        return res.status(401).json({ error: 'Authentication required' });
-    }
+  if (!req.session || !req.session.userId) {
+    logger.warn('Authentication failed', {
+      ip: req.ip,
+      userAgent: req.get('User-Agent'),
+      path: req.path
+    });
+    return res.status(401).json({ error: 'Authentication required' });
+  }
 
-    console.log('RequireAuth - Authentication successful for UID:', req.session.userId);
-    req.uid = req.session.userId;
-    next();
+  req.uid = req.session.userId;
+  next();
 }
 
 // Input validation middleware
 function validateUid(req, res, next) {
-    // Handle both JSON and form data
-    const uid = req.body.uid || req.query.uid;
-    if (!uid || typeof uid !== 'string' || uid.length < 3 || uid.length > 50) {
-        return res.status(400).json({ error: 'Invalid user ID format' });
-    }
-    req.uid = uid.replace(/[^a-zA-Z0-9-_]/g, '');
-    next();
+  // Handle both JSON and form data
+  const uid = req.body.uid || req.query.uid;
+  if (!uid || typeof uid !== 'string' || uid.length < 3 || uid.length > 50) {
+    return res.status(400).json({ error: 'Invalid user ID format' });
+  }
+  req.uid = uid.replace(/[^a-zA-Z0-9-_]/g, '');
+  next();
 }
 
 function validateTextInput(req, res, next) {
-    const { message, transcript_segments } = req.body;
+  const { message, transcript_segments } = req.body;
 
-    if (message && (typeof message !== 'string' || message.length > 5000)) {
-        return res.status(400).json({ error: 'Invalid message format or too long' });
-    }
+  if (message && (typeof message !== 'string' || message.length > 5000)) {
+    return res.status(400).json({ error: 'Invalid message format or too long' });
+  }
 
-    if (transcript_segments && (!Array.isArray(transcript_segments) || transcript_segments.length > 100)) {
-        return res.status(400).json({ error: 'Invalid transcript format or too many segments' });
-    }
+  if (
+    transcript_segments &&
+    (!Array.isArray(transcript_segments) || transcript_segments.length > 100)
+  ) {
+    return res.status(400).json({ error: 'Invalid transcript format or too many segments' });
+  }
 
-    next();
+  next();
 }
 
 function validateNodeData(req, res, next) {
-    const { name, type } = req.body;
+  const { name, type } = req.body;
 
-    if (!name || typeof name !== 'string' || name.length > 200) {
-        return res.status(400).json({ error: 'Invalid node name' });
-    }
+  if (!name || typeof name !== 'string' || name.length > 200) {
+    return res.status(400).json({ error: 'Invalid node name' });
+  }
 
-    if (!type || typeof type !== 'string' || !['person', 'location', 'event', 'concept'].includes(type)) {
-        return res.status(400).json({ error: 'Invalid node type' });
-    }
+  if (
+    !type ||
+    typeof type !== 'string' ||
+    !['person', 'location', 'event', 'concept'].includes(type)
+  ) {
+    return res.status(400).json({ error: 'Invalid node type' });
+  }
 
-    next();
+  next();
 }
 
-app.get("/overview", (req, res) => {
-    res.sendFile(__dirname + '/public/overview.html');
+app.get('/overview', (req, res) => {
+  res.sendFile(__dirname + '/public/overview.html');
 });
 
-app.get("/", async (req, res) => {
-    const uid = req.query.uid;
+app.get('/', async (req, res) => {
+  const uid = req.query.uid;
 
-    if (uid && typeof uid === 'string' && uid.length >= 3 && uid.length <= 50) {
-        try {
-            const sanitizedUid = uid.replace(/[^a-zA-Z0-9-_]/g, '');
+  if (uid && typeof uid === 'string' && uid.length >= 3 && uid.length <= 50) {
+    try {
+      const sanitizedUid = uid.replace(/[^a-zA-Z0-9-_]/g, '');
 
-            await supabase
-                .from('brain_users')
-                .upsert([
-                    {
-                        uid: sanitizedUid
-                    }
-                ]);
+      await supabase.from('brain_users').upsert([
+        {
+          uid: sanitizedUid,
+        },
+      ]);
 
-            req.session.userId = sanitizedUid;
-            req.session.loginTime = new Date().toISOString();
+      req.session.userId = sanitizedUid;
+      req.session.loginTime = new Date().toISOString();
+      
+      logger.info('User auto-login successful', { uid: sanitizedUid });
 
-            return res.redirect('/');
-        } catch (error) {
-            console.error('Auto-login error:', error);
-        }
+      return res.redirect('/');
+    } catch (error) {
+      logger.error('Auto-login error', { error: error.message, stack: error.stack });
     }
+  }
 
-    res.sendFile(__dirname + '/public/main.html');
+  res.sendFile(__dirname + '/public/main.html');
 });
 
 // Login route
-app.get("/login", (req, res) => {
-    res.sendFile(__dirname + '/public/login.html');
+app.get('/login', (req, res) => {
+  res.sendFile(__dirname + '/public/login.html');
 });
 
 // Auth endpoints
-app.post("/api/auth/login", validateUid, async (req, res) => {
-    try {
-        const uid = req.uid;
+app.post('/api/auth/login', authLimiter, validateUid, async (req, res) => {
+  try {
+    const uid = req.uid;
 
-        // Create or update user record
-        await supabase
-            .from('brain_users')
-            .upsert([
-                {
-                    uid: uid
-                }
-            ]);
+    // Create or update user record
+    await supabase.from('brain_users').upsert([
+      {
+        uid: uid,
+      },
+    ]);
 
-        // Set session and ensure it's saved
-        req.session.userId = uid;
-        req.session.loginTime = new Date().toISOString();
+    // Set session and ensure it's saved
+    req.session.userId = uid;
+    req.session.loginTime = new Date().toISOString();
 
-        // Force session save
-        req.session.save((err) => {
-            if (err) {
-                console.error('Session save error:', err);
-                return res.status(500).json({ error: 'Login failed' });
-            }
+    // Force session save
+    req.session.save((err) => {
+      if (err) {
+        logger.error('Session save error', { error: err.message, uid });
+        return res.status(500).json({ error: 'Login failed' });
+      }
 
-            res.json({
-                success: true,
-                uid: uid
-            });
-        });
-    } catch (error) {
-        console.error('Login error:', error);
-        res.status(500).json({ error: 'Login failed' });
-    }
+      logger.info('User login successful', { uid });
+      res.json({
+        success: true,
+        uid: uid,
+      });
+    });
+  } catch (error) {
+    logger.error('Login error', { error: error.message, stack: error.stack });
+    res.status(500).json({ error: 'Login failed' });
+  }
 });
 
-app.post("/api/auth/logout", (req, res) => {
-    req.session.destroy((err) => {
-        if (err) {
-            return res.status(500).json({ error: 'Logout failed' });
-        }
-        res.clearCookie('connect.sid');
-        res.json({ success: true });
-    });
+app.post('/api/auth/logout', authLimiter, (req, res) => {
+  const uid = req.session?.userId;
+  req.session.destroy((err) => {
+    if (err) {
+      logger.error('Logout error', { error: err.message, uid });
+      return res.status(500).json({ error: 'Logout failed' });
+    }
+    logger.info('User logout successful', { uid });
+    res.clearCookie('connect.sid');
+    res.json({ success: true });
+  });
 });
 
 // Profile endpoint
 app.get('/api/profile', requireAuth, async (req, res) => {
-    try {
-        const uid = req.uid;
-        const { data: rows } = await supabase
-            .from('brain_users')
-            .select()
-            .eq('uid', uid);
+  try {
+    const uid = req.uid;
+    const { data: rows } = await supabase.from('brain_users').select().eq('uid', uid);
 
-        if (rows && rows.length > 0) {
-            res.json({
-                uid: rows[0].uid,
-                loginTime: req.session.loginTime
-            });
-        } else {
-            res.status(404).json({ error: 'User not found' });
-        }
-    } catch (error) {
-        console.error('Profile error:', error);
-        res.status(500).json({ error: 'Error fetching profile' });
+    if (rows && rows.length > 0) {
+      res.json({
+        uid: rows[0].uid,
+        loginTime: req.session.loginTime,
+      });
+    } else {
+      logger.warn('Profile not found', { uid });
+      res.status(404).json({ error: 'User not found' });
     }
+  } catch (error) {
+    logger.error('Profile error', { error: error.message, uid });
+    res.status(500).json({ error: 'Error fetching profile' });
+  }
 });
 
-app.get("/setup", async (req, res) => {
-    res.json({ 'is_setup_completed': true });
+app.get('/setup', async (req, res) => {
+  res.json({ is_setup_completed: true });
 });
 
 // Edit node endpoint
-app.put('/api/node/:nodeId', requireAuth, validateNodeData, async (req, res) => {
-    try {
-        const { nodeId } = req.params;
-        const { name, type } = req.body;
-        const uid = req.uid;
-
-        if (!nodeId || typeof nodeId !== 'string' || nodeId.length > 100) {
-            return res.status(400).json({ error: 'Invalid node ID' });
-        }
-
-        await supabase
-            .from('memory_nodes')
-            .update({
-                name: name,
-                type: type
-            })
-            .eq('uid', uid)
-            .eq('node_id', nodeId);
-
-        // Get updated memory graph
-        const memoryGraph = await loadMemoryGraph(uid);
-        const visualizationData = {
-            nodes: Array.from(memoryGraph.nodes.values()),
-            relationships: memoryGraph.relationships
-        };
-
-        res.json(visualizationData);
-    } catch (error) {
-        console.error('Error updating node:', error);
-        res.status(500).json({ error: 'Error updating node' });
-    }
-});
-
-// Delete node endpoint
-app.delete('/api/node/:nodeId', requireAuth, async (req, res) => {
+app.put('/api/node/:nodeId', apiLimiter, requireAuth, validateNodeData, async (req, res) => {
+  try {
     const { nodeId } = req.params;
+    const { name, type } = req.body;
     const uid = req.uid;
 
     if (!nodeId || typeof nodeId !== 'string' || nodeId.length > 100) {
-        return res.status(400).json({ error: 'Invalid node ID' });
+      return res.status(400).json({ error: 'Invalid node ID' });
     }
 
-    try {
-        await supabase
-            .from('memory_relationships')
-            .delete()
-            .eq('uid', uid)
-            .or(`source.eq.${nodeId},target.eq.${nodeId}`);
+    await supabase
+      .from('memory_nodes')
+      .update({
+        name: name,
+        type: type,
+      })
+      .eq('uid', uid)
+      .eq('node_id', nodeId);
 
-        await supabase
-            .from('memory_nodes')
-            .delete()
-            .eq('uid', uid)
-            .eq('node_id', nodeId);
+    // Get updated memory graph
+    const memoryGraph = await loadMemoryGraph(uid);
+    const visualizationData = {
+      nodes: Array.from(memoryGraph.nodes.values()),
+      relationships: memoryGraph.relationships,
+    };
 
-        // Get updated memory graph
-        const memoryGraph = await loadMemoryGraph(uid);
-        const visualizationData = {
-            nodes: Array.from(memoryGraph.nodes.values()),
-            relationships: memoryGraph.relationships
-        };
+    res.json(visualizationData);
+  } catch (error) {
+    logger.error('Node update error', {
+      error: error.message,
+      uid,
+      nodeId
+    });
+    res.status(500).json({ error: 'Error updating node' });
+  }
+});
 
-        res.json(visualizationData);
-    } catch (error) {
-        console.error('Error deleting node:', error);
-        res.status(500).json({ error: 'Error deleting node' });
-    }
+// Delete node endpoint
+app.delete('/api/node/:nodeId', apiLimiter, requireAuth, async (req, res) => {
+  const { nodeId } = req.params;
+  const uid = req.uid;
+
+  if (!nodeId || typeof nodeId !== 'string' || nodeId.length > 100) {
+    return res.status(400).json({ error: 'Invalid node ID' });
+  }
+
+  try {
+    await supabase
+      .from('memory_relationships')
+      .delete()
+      .eq('uid', uid)
+      .or(`source.eq.${nodeId},target.eq.${nodeId}`);
+
+    await supabase.from('memory_nodes').delete().eq('uid', uid).eq('node_id', nodeId);
+
+    // Get updated memory graph
+    const memoryGraph = await loadMemoryGraph(uid);
+    const visualizationData = {
+      nodes: Array.from(memoryGraph.nodes.values()),
+      relationships: memoryGraph.relationships,
+    };
+
+    res.json(visualizationData);
+  } catch (error) {
+    logger.error('Node deletion error', {
+      error: error.message,
+      uid,
+      nodeId
+    });
+    res.status(500).json({ error: 'Error deleting node' });
+  }
 });
 
 // Protected API endpoints
-app.post('/api/chat', requireAuth, validateTextInput, async (req, res) => {
-    try {
-        const { message } = req.body;
-        const uid = req.uid;
+app.post('/api/chat', apiLimiter, requireAuth, validateTextInput, async (req, res) => {
+  try {
+    const { message } = req.body;
+    const uid = req.uid;
 
-        if (!message || typeof message !== 'string') {
-            return res.status(400).json({ error: 'Message is required' });
-        }
-
-        const response = await processChatWithGPT(uid, message);
-        res.json({ response });
-    } catch (error) {
-        console.error('Error:', error);
-        res.status(500).json({ error: 'Error processing chat' });
+    if (!message || typeof message !== 'string') {
+      return res.status(400).json({ error: 'Message is required' });
     }
+
+    const response = await processChatWithGPT(uid, message);
+    res.json({ response });
+  } catch (error) {
+    logger.error('Chat processing error', {
+      error: error.message,
+      uid,
+      messageLength: message?.length || 0
+    });
+    res.status(500).json({ error: 'Error processing chat' });
+  }
 });
 
 function addSampleData(uid, numNodes = 3000, numRelationships = 5000) {
-    const types = ['person', 'location', 'event', 'concept'];
-    const actions = ['knows', 'lives_in', 'attended', 'connected_to', 'influenced', 'created'];
+  const types = ['person', 'location', 'event', 'concept'];
+  const actions = ['knows', 'lives_in', 'attended', 'connected_to', 'influenced', 'created'];
 
-    const firstNames = ['Liam', 'Emma', 'Noah', 'Olivia', 'Ethan', 'Ava', 'James', 'Sophia', 'Lucas', 'Mia'];
-    const lastNames = ['Johnson', 'Smith', 'Brown', 'Williams', 'Taylor', 'Anderson', 'Davis', 'Miller', 'Wilson', 'Moore'];
-    const places = ['New York', 'Berlin', 'Tokyo', 'London', 'Paris', 'Sydney', 'Toronto', 'Madrid', 'Rome', 'Amsterdam'];
-    const events = ['Tech Conference', 'Music Festival', 'Art Exhibition', 'Startup Meetup', 'Science Fair'];
-    const concepts = ['Quantum Computing', 'AI Ethics', 'Sustainable Energy', 'Blockchain Security', 'Neural Networks'];
+  const firstNames = [
+    'Liam',
+    'Emma',
+    'Noah',
+    'Olivia',
+    'Ethan',
+    'Ava',
+    'James',
+    'Sophia',
+    'Lucas',
+    'Mia',
+  ];
+  const lastNames = [
+    'Johnson',
+    'Smith',
+    'Brown',
+    'Williams',
+    'Taylor',
+    'Anderson',
+    'Davis',
+    'Miller',
+    'Wilson',
+    'Moore',
+  ];
+  const places = [
+    'New York',
+    'Berlin',
+    'Tokyo',
+    'London',
+    'Paris',
+    'Sydney',
+    'Toronto',
+    'Madrid',
+    'Rome',
+    'Amsterdam',
+  ];
+  const events = [
+    'Tech Conference',
+    'Music Festival',
+    'Art Exhibition',
+    'Startup Meetup',
+    'Science Fair',
+  ];
+  const concepts = [
+    'Quantum Computing',
+    'AI Ethics',
+    'Sustainable Energy',
+    'Blockchain Security',
+    'Neural Networks',
+  ];
 
-    let nodes = [];
-    let relationships = [];
+  let nodes = [];
+  let relationships = [];
 
-    for (let i = 0; i < numNodes; i++) {
-        const id = `node-${i}`;
-        const type = getRandomElement(types);
-        let name;
+  for (let i = 0; i < numNodes; i++) {
+    const id = `node-${i}`;
+    const type = getRandomElement(types);
+    let name;
 
-        switch (type) {
-            case 'Person':
-                name = `${getRandomElement(firstNames)} ${getRandomElement(lastNames)}`;
-                break;
-            case 'Location':
-                name = getRandomElement(places);
-                break;
-            case 'Event':
-                name = getRandomElement(events);
-                break;
-            case 'Concept':
-                name = getRandomElement(concepts);
-                break;
-        }
-
-        nodes.push({ id, type, name, uid });
+    switch (type) {
+      case 'Person':
+        name = `${getRandomElement(firstNames)} ${getRandomElement(lastNames)}`;
+        break;
+      case 'Location':
+        name = getRandomElement(places);
+        break;
+      case 'Event':
+        name = getRandomElement(events);
+        break;
+      case 'Concept':
+        name = getRandomElement(concepts);
+        break;
     }
 
-    for (let i = 0; i < numRelationships; i++) {
-        const source = getRandomElement(nodes).id;
-        const target = getRandomElement(nodes).id;
-        if (source !== target) {
-            const action = getRandomElement(actions);
-            relationships.push({ source, target, action, uid });
-        }
-    }
+    nodes.push({ id, type, name, uid });
+  }
 
-    return { nodes, relationships };
+  for (let i = 0; i < numRelationships; i++) {
+    const source = getRandomElement(nodes).id;
+    const target = getRandomElement(nodes).id;
+    if (source !== target) {
+      const action = getRandomElement(actions);
+      relationships.push({ source, target, action, uid });
+    }
+  }
+
+  return { nodes, relationships };
 }
 
 function getRandomElement(array) {
-    return array[Math.floor(Math.random() * array.length)];
+  return array[Math.floor(Math.random() * array.length)];
 }
 
 // Get current memory graph
-app.get('/api/memory-graph', requireAuth, async (req, res) => {
-    try {
-        const uid = req.uid;
-        const sample = req.query.sample === 'true';
+app.get('/api/memory-graph', apiLimiter, requireAuth, async (req, res) => {
+  try {
+    const uid = req.uid;
+    const sample = req.query.sample === 'true';
 
-        let memoryGraph = await loadMemoryGraph(uid);
+    let memoryGraph = await loadMemoryGraph(uid);
 
-        if (sample) {
-            memoryGraph = addSampleData(uid, 500, 800);
-        }
-        const visualizationData = {
-            nodes: Array.from(memoryGraph.nodes.values()),
-            relationships: memoryGraph.relationships
-        };
-
-        res.json(visualizationData);
-    } catch (error) {
-        console.error('Error:', error);
-        res.status(500).json({ error: 'Error fetching memory graph' });
+    if (sample) {
+      memoryGraph = addSampleData(uid, 500, 800);
     }
+    const visualizationData = {
+      nodes: Array.from(memoryGraph.nodes.values()),
+      relationships: memoryGraph.relationships,
+    };
+
+    res.json(visualizationData);
+  } catch (error) {
+    logger.error('Memory graph fetch error', {
+      error: error.message,
+      uid,
+      sample: req.query.sample
+    });
+    res.status(500).json({ error: 'Error fetching memory graph' });
+  }
 });
 
-app.post('/api/process-text', requireAuth, validateTextInput, async (req, res) => {
-    try {
-        const { transcript_segments } = req.body;
-        const uid = req.uid;
+app.post('/api/process-text', apiLimiter, requireAuth, validateTextInput, async (req, res) => {
+  try {
+    const { transcript_segments } = req.body;
+    const uid = req.uid;
 
-        if (!transcript_segments || !Array.isArray(transcript_segments)) {
-            return res.status(400).json({ error: 'Transcript segments are required' });
-        }
-
-        let text = '';
-        for (const segment of transcript_segments) {
-            if (segment.speaker && segment.text) {
-                text += segment.speaker + ': ' + segment.text + '\n';
-            }
-        }
-
-        if (!text.trim()) {
-            return res.status(400).json({ error: 'No valid text content found' });
-        }
-
-        const processedData = await processTextWithGPT(text);
-        await saveMemoryGraph(uid, processedData);
-
-        // Get updated memory graph
-        const memoryGraph = await loadMemoryGraph(uid);
-        const visualizationData = {
-            nodes: Array.from(memoryGraph.nodes.values()),
-            relationships: memoryGraph.relationships
-        };
-
-        res.json(visualizationData);
-    } catch (error) {
-        console.error('Error:', error);
-        res.status(500).json({ error: 'Error processing text' });
+    if (!transcript_segments || !Array.isArray(transcript_segments)) {
+      return res.status(400).json({ error: 'Transcript segments are required' });
     }
+
+    let text = '';
+    for (const segment of transcript_segments) {
+      if (segment.speaker && segment.text) {
+        text += segment.speaker + ': ' + segment.text + '\n';
+      }
+    }
+
+    if (!text.trim()) {
+      return res.status(400).json({ error: 'No valid text content found' });
+    }
+
+    const processedData = await processTextWithGPT(text);
+    await saveMemoryGraph(uid, processedData);
+
+    // Get updated memory graph
+    const memoryGraph = await loadMemoryGraph(uid);
+    const visualizationData = {
+      nodes: Array.from(memoryGraph.nodes.values()),
+      relationships: memoryGraph.relationships,
+    };
+
+    res.json(visualizationData);
+  } catch (error) {
+    logger.error('Text processing error', {
+      error: error.message,
+      uid,
+      segmentCount: transcript_segments?.length || 0
+    });
+    res.status(500).json({ error: 'Error processing text' });
+  }
 });
 
 // Delete all user data
 async function deleteAllUserData(uid) {
-    try {
-        await supabase
-            .from('memory_relationships')
-            .delete()
-            .eq('uid', uid);
+  try {
+    await supabase.from('memory_relationships').delete().eq('uid', uid);
+    await supabase.from('memory_nodes').delete().eq('uid', uid);
+    await supabase.from('brain_users').delete().eq('uid', uid);
 
-        await supabase
-            .from('memory_nodes')
-            .delete()
-            .eq('uid', uid);
-
-        await supabase
-            .from('brain_users')
-            .delete()
-            .eq('uid', uid);
-
-        return true;
-    } catch (error) {
-        console.error('Error deleting user data:', error);
-        throw error;
-    }
+    return true;
+  } catch (error) {
+    logger.error('Error deleting user data', {
+      error: error.message,
+      uid
+    });
+    throw error;
+  }
 }
 
 // API Endpoints
-app.post('/api/delete-all-data', requireAuth, async (req, res) => {
-    try {
-        const uid = req.uid;
-        await deleteAllUserData(uid);
+app.post('/api/delete-all-data', authLimiter, requireAuth, async (req, res) => {
+  try {
+    const uid = req.uid;
+    await deleteAllUserData(uid);
 
-        // Destroy session since user data is deleted
-        req.session.destroy((err) => {
-            if (err) {
-                console.error('Session destruction error:', err);
-            }
-        });
+    // Destroy session since user data is deleted
+    req.session.destroy((err) => {
+      if (err) {
+        console.error('Session destruction error:', err);
+      }
+    });
 
-        res.json({ success: true, message: 'All data deleted successfully' });
-    } catch (error) {
-        console.error('Error in delete-all-data endpoint:', error);
-        res.status(500).json({ error: 'Failed to delete data' });
-    }
+    res.json({ success: true, message: 'All data deleted successfully' });
+  } catch (error) {
+    console.error('Error in delete-all-data endpoint:', error);
+    res.status(500).json({ error: 'Failed to delete data' });
+  }
 });
 
 // Input validation middleware
 const validateInput = (req, res, next) => {
-    const { query, type } = req.body;
+  const { query, type } = req.body;
 
-    if (!query || typeof query !== 'string' || query.length > 200) {
-        return res.status(400).json({
-            error: 'Invalid query parameter'
-        });
-    }
+  if (!query || typeof query !== 'string' || query.length > 200) {
+    return res.status(400).json({
+      error: 'Invalid query parameter',
+    });
+  }
 
-    if (!type || typeof type !== 'string' || type.length > 50) {
-        return res.status(400).json({
-            error: 'Invalid type parameter'
-        });
-    }
+  if (!type || typeof type !== 'string' || type.length > 50) {
+    return res.status(400).json({
+      error: 'Invalid type parameter',
+    });
+  }
 
-    // Remove any potentially harmful characters
-    req.body.query = query.replace(/[^\w\s-]/g, '');
-    req.body.type = type.replace(/[^\w\s-]/g, '');
+  // Remove any potentially harmful characters
+  req.body.query = query.replace(/[^\w\s-]/g, '');
+  req.body.type = type.replace(/[^\w\s-]/g, '');
 
-    next();
+  next();
 };
 
 // Enrich content endpoint
 // Generate node description
-app.post('/api/generate-description', requireAuth, async (req, res) => {
-    try {
-        const { node, connections } = req.body;
+app.post('/api/generate-description', apiLimiter, requireAuth, async (req, res) => {
+  try {
+    const { node, connections } = req.body;
 
-        if (!node || !node.name || !node.type) {
-            return res.status(400).json({ error: 'Invalid node data' });
-        }
+    if (!node || !node.name || !node.type) {
+      return res.status(400).json({ error: 'Invalid node data' });
+    }
 
-        if (!connections || !Array.isArray(connections)) {
-            return res.status(400).json({ error: 'Invalid connections data' });
-        }
+    if (!connections || !Array.isArray(connections)) {
+      return res.status(400).json({ error: 'Invalid connections data' });
+    }
 
-        const prompt = `Analyze this node and its connections in a brain-like memory network:
+    const prompt = `Analyze this node and its connections in a brain-like memory network:
 
 Node: ${node.name} (Type: ${node.type})
 
 Connections:
-${connections.map(c => `- ${c.isSource ? 'Connects to' : 'Connected from'} ${c.node.name} through action: ${c.action}`).join('\n')}
+${connections.map((c) => `- ${c.isSource ? 'Connects to' : 'Connected from'} ${c.node.name} through action: ${c.action}`).join('\n')}
 
 Provide a concise but insightful description that:
 1. Summarizes the node's role and significance
@@ -818,140 +1088,199 @@ Provide a concise but insightful description that:
 
 Keep the description natural and engaging, focusing on the most meaningful connections.`;
 
-        const completion = await openai.chat.completions.create({
-            model: "openai/gpt-4o",
-            messages: [
-                {
-                    role: "system",
-                    content: "You are an insightful analyst helping understand connections in a memory network. Focus on meaningful patterns and relationships."
-                },
-                {
-                    role: "user",
-                    content: prompt
-                }
-            ],
-            temperature: 0.7,
-            max_tokens: 200
-        });
+    const completion = await openai.chat.completions.create({
+      model: 'openai/gpt-4o',
+      messages: [
+        {
+          role: 'system',
+          content:
+            'You are an insightful analyst helping understand connections in a memory network. Focus on meaningful patterns and relationships.',
+        },
+        {
+          role: 'user',
+          content: prompt,
+        },
+      ],
+      temperature: 0.7,
+      max_tokens: 200,
+    });
 
-        res.json({ description: completion.choices[0].message.content });
-    } catch (error) {
-        console.error('Error generating description:', error);
-        res.status(500).json({ error: 'Failed to generate description' });
-    }
+    res.json({ description: completion.choices[0].message.content });
+  } catch (error) {
+    console.error('Error generating description:', error);
+    res.status(500).json({ error: 'Failed to generate description' });
+  }
 });
 
-app.post('/api/enrich-content', requireAuth, validateInput, async (req, res) => {
-    try {
-        const { query, type } = req.body;
+app.post('/api/enrich-content', apiLimiter, requireAuth, validateInput, async (req, res) => {
+  try {
+    const { query, type } = req.body;
 
-        // Configure axios with proper headers and timeout
-        const axiosConfig = {
-            headers: {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8'
-            },
-            timeout: 5000,
-            maxRedirects: 5,
-            validateStatus: (status) => status >= 200 && status < 300
-        };
+    // Configure axios with proper headers and timeout
+    const axiosConfig = {
+      headers: {
+        'User-Agent':
+          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+        Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+      },
+      timeout: 5000,
+      maxRedirects: 5,
+      validateStatus: (status) => status >= 200 && status < 300,
+    };
 
-        // Search for images with rate limiting
-        const searchUrl = `https://www.google.com/search?q=${encodeURIComponent(query + ' ' + type)}&tbm=isch`;
+    // Search for images with rate limiting
+    const searchUrl = `https://www.google.com/search?q=${encodeURIComponent(query + ' ' + type)}&tbm=isch`;
 
-        const response = await axios.get(searchUrl, axiosConfig);
-        const cleanHtml = sanitizeHtml(response.data, {
-            allowedTags: [],
-            allowedAttributes: {},
-            textFilter: function (text) {
-                return text.replace(/[^\x20-\x7E]/g, '');
-            }
-        });
+    const response = await axios.get(searchUrl, axiosConfig);
+    const cleanHtml = sanitizeHtml(response.data, {
+      allowedTags: [],
+      allowedAttributes: {},
+      textFilter: function (text) {
+        return text.replace(/[^\x20-\x7E]/g, '');
+      },
+    });
 
-        // Extract and validate image URLs
-        const regex = /\["(https?:\/\/[^"]+\.(?:jpg|jpeg|png|gif))"/gi;
-        const images = [];
-        const seenUrls = new Set();
-        let match;
+    // Extract and validate image URLs
+    const regex = /\["(https?:\/\/[^"]+\.(?:jpg|jpeg|png|gif))"/gi;
+    const images = [];
+    const seenUrls = new Set();
+    let match;
 
-        while ((match = regex.exec(cleanHtml)) !== null && images.length < 4) {
-            try {
-                const imageUrl = match[1];
+    while ((match = regex.exec(cleanHtml)) !== null && images.length < 4) {
+      try {
+        const imageUrl = match[1];
 
-                // Skip if we've seen this URL before
-                if (seenUrls.has(imageUrl)) {
-                    continue;
-                }
-
-                // Validate URL
-                const parsedUrl = new URL(imageUrl);
-                if (!['http:', 'https:'].includes(parsedUrl.protocol)) {
-                    continue;
-                }
-
-                // Add valid image
-                images.push({
-                    url: imageUrl,
-                    title: `Related image for ${query}`,
-                    source: parsedUrl.hostname
-                });
-
-                seenUrls.add(imageUrl);
-            } catch (err) {
-                console.warn('Invalid image URL found:', err.message);
-                continue;
-            }
+        // Skip if we've seen this URL before
+        if (seenUrls.has(imageUrl)) {
+          continue;
         }
 
-        // Return results with appropriate cache headers
-        res.set('Cache-Control', 'private, max-age=3600');
-        res.json({
-            images,
-            links: [],
-            query,
-            timestamp: new Date().toISOString()
-        });
-
-    } catch (error) {
-        console.error('Error enriching content:', error);
-
-        // Handle specific error types
-        if (error.code === 'ECONNABORTED') {
-            return res.status(504).json({
-                error: 'Request timeout',
-                images: [],
-                links: []
-            });
+        // Validate URL
+        const parsedUrl = new URL(imageUrl);
+        if (!['http:', 'https:'].includes(parsedUrl.protocol)) {
+          continue;
         }
 
-        if (axios.isAxiosError(error) && error.response) {
-            return res.status(error.response.status || 500).json({
-                error: 'External service error',
-                images: [],
-                links: []
-            });
-        }
-
-        res.status(500).json({
-            error: 'Internal server error',
-            images: [],
-            links: []
+        // Add valid image
+        images.push({
+          url: imageUrl,
+          title: `Related image for ${query}`,
+          source: parsedUrl.hostname,
         });
+
+        seenUrls.add(imageUrl);
+      } catch (err) {
+        console.warn('Invalid image URL found:', err.message);
+        continue;
+      }
     }
+
+    // Return results with appropriate cache headers
+    res.set('Cache-Control', 'private, max-age=3600');
+    res.json({
+      images,
+      links: [],
+      query,
+      timestamp: new Date().toISOString(),
+    });
+  } catch (error) {
+    console.error('Error enriching content:', error);
+
+    // Handle specific error types
+    if (error.code === 'ECONNABORTED') {
+      return res.status(504).json({
+        error: 'Request timeout',
+        images: [],
+        links: [],
+      });
+    }
+
+    if (axios.isAxiosError(error) && error.response) {
+      return res.status(error.response.status || 500).json({
+        error: 'External service error',
+        images: [],
+        links: [],
+      });
+    }
+
+    res.status(500).json({
+      error: 'Internal server error',
+      images: [],
+      links: [],
+    });
+  }
 });
 
 // Error pages
-app.use((req, res, next) => {
-    res.status(404).sendFile(__dirname + '/public/404.html');
+app.use((req, res) => {
+  logger.warn('404 - Page not found', {
+    path: req.path,
+    method: req.method,
+    ip: req.ip,
+    userAgent: req.get('User-Agent')
+  });
+  res.status(404).sendFile(__dirname + '/public/404.html');
 });
 
-app.use((err, req, res, next) => {
-    const result = handleDatabaseError(err, 'request handling');
-    console.error('Unhandled error:', result.error);
-    res.status(result.status).sendFile(__dirname + '/public/500.html');
+app.use((err, req, res, _next) => {
+  const result = handleDatabaseError(err, 'request handling');
+  logger.error('Unhandled error', {
+    error: err.message,
+    stack: err.stack,
+    path: req.path,
+    method: req.method,
+    ip: req.ip
+  });
+  res.status(result.status).sendFile(__dirname + '/public/500.html');
+});
+
+// Graceful shutdown handling
+// Graceful shutdown using HTTP server close
+function initiateGracefulShutdown(signal) {
+  logger.info(`${signal} received, initiating graceful shutdown`);
+  try {
+    server.close((err) => {
+      if (err) {
+        logger.error('Error while closing server', { error: err.message });
+        process.exit(1);
+      }
+      logger.info('HTTP server closed gracefully');
+      process.exit(0);
+    });
+    // Force exit if not closed in time
+    setTimeout(() => {
+      logger.warn('Forcing shutdown after timeout');
+      process.exit(1);
+    }, 10000).unref();
+  } catch (err) {
+    logger.error('Unexpected error during shutdown', { error: err.message });
+    process.exit(1);
+  }
+}
+
+process.on('SIGTERM', () => initiateGracefulShutdown('SIGTERM'));
+process.on('SIGINT', () => initiateGracefulShutdown('SIGINT'));
+
+process.on('unhandledRejection', (reason, promise) => {
+  logger.error('Unhandled Rejection', {
+    reason,
+    promise
+  });
+});
+
+process.on('uncaughtException', (error) => {
+  logger.error('Uncaught Exception', {
+    error: error.message,
+    stack: error.stack
+  });
+  process.exit(1);
 });
 
 // Start server
-app.listen(port, () => {
-    console.log(`Server running on port ${port} in ${process.env.NODE_ENV || 'development'} mode`);
+const server = app.listen(port, () => {
+  logger.info(`Server started successfully`, {
+    port,
+    environment: process.env.NODE_ENV || 'development',
+    nodeVersion: process.version
+  });
 });
