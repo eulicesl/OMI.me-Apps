@@ -1,0 +1,20 @@
+services:
+  - type: web
+    name: brain-latest
+    env: node
+    rootDir: Brain
+    plan: free
+    buildCommand: npm ci
+    startCommand: npm start
+    autoDeploy: true
+    healthCheckPath: /healthz
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 3000
+      # The following are expected to be set in Render dashboard
+      # - SUPABASE_URL
+      # - SUPABASE_ANON_KEY
+      # - OPENROUTER_API_KEY
+      # - SESSION_SECRET

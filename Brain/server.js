@@ -19,17 +19,15 @@ const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 const compression = require('compression');
 const winston = require('winston');
+const fs = require('fs');
+const path = require('path');
 
 // Environment variable validation
 function validateEnvironmentVariables() {
-  const requiredEnvVars = [
-    'SUPABASE_URL',
-    'SUPABASE_ANON_KEY',
-    'OPENROUTER_API_KEY'
-  ];
+  const requiredEnvVars = ['SUPABASE_URL', 'SUPABASE_ANON_KEY', 'OPENROUTER_API_KEY'];
 
-  const missingVars = requiredEnvVars.filter(varName => !process.env[varName]);
-  
+  const missingVars = requiredEnvVars.filter((varName) => !process.env[varName]);
+
   if (missingVars.length > 0) {
     logger.error('Missing required environment variables:', { missingVars });
     process.exit(1);
@@ -46,13 +44,21 @@ function validateEnvironmentVariables() {
   logger.info('Environment variables validated successfully');
 }
 
+// Ensure logs directory exists for file transports (Render uses ephemeral FS but writable)
+const logsDirectoryPath = path.join(__dirname, 'logs');
+try {
+  fs.mkdirSync(logsDirectoryPath, { recursive: true });
+} catch (_e) {
+  // best-effort
+}
+
 // Configure Winston logger
 const logger = winston.createLogger({
   level: process.env.LOG_LEVEL || 'info',
   format: winston.format.combine(
     winston.format.timestamp(),
     winston.format.errors({ stack: true }),
-    winston.format.json()
+    winston.format.json(),
   ),
   defaultMeta: { service: 'brain-app' },
   transports: [
@@ -65,12 +71,11 @@ const logger = winston.createLogger({
 
 // Add console transport for development
 if (process.env.NODE_ENV !== 'production') {
-  logger.add(new winston.transports.Console({
-    format: winston.format.combine(
-      winston.format.colorize(),
-      winston.format.simple()
-    )
-  }));
+  logger.add(
+    new winston.transports.Console({
+      format: winston.format.combine(winston.format.colorize(), winston.format.simple()),
+    }),
+  );
 }
 
 // Validate environment variables on startup
@@ -84,7 +89,7 @@ function handleDatabaseError(error, operation) {
   logger.error(`Database error during ${operation}`, {
     error: error.message,
     stack: error.stack,
-    operation
+    operation,
   });
   return {
     status: 500,
@@ -146,12 +151,12 @@ async function createTables() {
     }
   } catch (err) {
     logger.warn('Auto-table creation failed. Please run setup-supabase.sql manually.', {
-      error: err.message
+      error: err.message,
     });
   }
 }
 
-createTables().catch(error => logger.error('Table creation failed', { error: error.message }));
+createTables().catch((error) => logger.error('Table creation failed', { error: error.message }));
 
 const app = express();
 const port = process.env.PORT || 3000;
@@ -162,21 +167,22 @@ const generalLimiter = rateLimit({
   max: 100, // Limit each IP to 100 requests per windowMs
   message: {
     error: 'Too many requests from this IP, please try again later.',
-    retryAfter: '15 minutes'
+    retryAfter: '15 minutes',
   },
   standardHeaders: true,
   legacyHeaders: false,
   handler: (req, res) => {
     logger.warn('Rate limit exceeded', {
+      requestId: req.requestId,
       ip: req.ip,
       userAgent: req.get('User-Agent'),
-      endpoint: req.path
+      endpoint: req.path,
     });
     res.status(429).json({
       error: 'Too many requests from this IP, please try again later.',
-      retryAfter: '15 minutes'
+      retryAfter: '15 minutes',
     });
-  }
+  },
 });
 
 const authLimiter = rateLimit({
@@ -184,22 +190,23 @@ const authLimiter = rateLimit({
   max: 10, // Stricter limit for auth endpoints
   message: {
     error: 'Too many authentication attempts, please try again later.',
-    retryAfter: '15 minutes'
+    retryAfter: '15 minutes',
   },
   standardHeaders: true,
   legacyHeaders: false,
   skipSuccessfulRequests: true,
   handler: (req, res) => {
     logger.warn('Auth rate limit exceeded', {
+      requestId: req.requestId,
       ip: req.ip,
       userAgent: req.get('User-Agent'),
-      endpoint: req.path
+      endpoint: req.path,
     });
     res.status(429).json({
       error: 'Too many authentication attempts, please try again later.',
-      retryAfter: '15 minutes'
+      retryAfter: '15 minutes',
     });
-  }
+  },
 });
 
 const apiLimiter = rateLimit({
@@ -207,21 +214,22 @@ const apiLimiter = rateLimit({
   max: 30, // Limit API calls
   message: {
     error: 'API rate limit exceeded, please slow down.',
-    retryAfter: '1 minute'
+    retryAfter: '1 minute',
   },
   standardHeaders: true,
   legacyHeaders: false,
   handler: (req, res) => {
     logger.warn('API rate limit exceeded', {
+      requestId: req.requestId,
       ip: req.ip,
       userAgent: req.get('User-Agent'),
-      endpoint: req.path
+      endpoint: req.path,
     });
     res.status(429).json({
       error: 'API rate limit exceeded, please slow down.',
-      retryAfter: '1 minute'
+      retryAfter: '1 minute',
     });
-  }
+  },
 });
 
 // Initialize OpenAI
@@ -231,53 +239,197 @@ const openai = new OpenAI({
 });
 
 // Security middleware
-app.use(helmet({
-  contentSecurityPolicy: {
-    directives: {
-      defaultSrc: ["'self'"],
-      styleSrc: ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com'],
-      fontSrc: ["'self'", 'https://fonts.gstatic.com'],
-      scriptSrc: ["'self'", "'unsafe-inline'"],
-      imgSrc: ["'self'", 'data:', 'https:'],
-      connectSrc: ["'self'", 'https:'],
+app.use(
+  helmet({
+    contentSecurityPolicy: {
+      directives: {
+        defaultSrc: ["'self'"],
+        styleSrc: ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com'],
+        fontSrc: ["'self'", 'https://fonts.gstatic.com'],
+        scriptSrc: ["'self'", "'unsafe-inline'"],
+        imgSrc: ["'self'", 'data:', 'https:'],
+        connectSrc: ["'self'", 'https:'],
+      },
     },
-  },
-  crossOriginEmbedderPolicy: false
-}));
+    crossOriginEmbedderPolicy: false,
+  }),
+);
 
 app.use(compression());
 app.use(generalLimiter);
 
+// Request timeout middleware for production protection
+app.use((req, res, next) => {
+  const timeout = process.env.REQUEST_TIMEOUT || 30000; // 30 seconds default
+
+  const timer = setTimeout(() => {
+    if (!res.headersSent) {
+      logger.warn('Request timeout', {
+        method: req.method,
+        url: req.url,
+        ip: req.ip,
+        userAgent: req.get('User-Agent'),
+        timeout: `${timeout}ms`,
+      });
+      res.status(408).json({
+        error: 'Request timeout',
+        timeout: `${timeout}ms`,
+      });
+    }
+  }, timeout);
+
+  res.on('finish', () => {
+    clearTimeout(timer);
+  });
+
+  res.on('close', () => {
+    clearTimeout(timer);
+  });
+
+  next();
+});
+
+// API versioning middleware
+app.use((req, res, next) => {
+  // Extract version from Accept header (e.g., 'application/vnd.brain.v1+json')
+  // or from URL path (e.g., '/api/v1/...')
+  // Default to v1 for backward compatibility
+
+  let apiVersion = 'v1';
+
+  // Check Accept header first
+  const acceptHeader = req.get('Accept');
+  if (acceptHeader) {
+    const versionMatch = acceptHeader.match(/application\/vnd\.brain\.(v\d+)\+json/);
+    if (versionMatch) {
+      apiVersion = versionMatch[1];
+    }
+  }
+
+  // Check URL path second (overrides header)
+  const pathMatch = req.path.match(/^\/api\/(v\d+)\//);
+  if (pathMatch) {
+    apiVersion = pathMatch[1];
+    // Remove version from path for routing
+    req.url = req.url.replace(`/${apiVersion}`, '');
+    req.originalUrl = req.originalUrl.replace(`/${apiVersion}`, '');
+  }
+
+  // Validate supported versions
+  const supportedVersions = ['v1'];
+  if (!supportedVersions.includes(apiVersion)) {
+    return res.status(400).json({
+      error: 'Unsupported API version',
+      supportedVersions,
+      requestedVersion: apiVersion,
+    });
+  }
+
+  req.apiVersion = apiVersion;
+  res.set('API-Version', apiVersion);
+  next();
+});
+
+// Request ID tracking middleware for debugging
+app.use((req, res, next) => {
+  // Generate unique request ID or use one from headers
+  req.requestId = req.get('X-Request-ID') || crypto.randomUUID();
+
+  // Add request ID to response headers for client debugging
+  res.set('X-Request-ID', req.requestId);
+
+  next();
+});
+
 // Request logging middleware
 app.use((req, res, next) => {
   const start = Date.now();
-  
+
   res.on('finish', () => {
     const duration = Date.now() - start;
     logger.info('HTTP Request', {
+      requestId: req.requestId,
       method: req.method,
       url: req.url,
       status: res.statusCode,
       duration: `${duration}ms`,
       ip: req.ip,
-      userAgent: req.get('User-Agent')
+      userAgent: req.get('User-Agent'),
+      apiVersion: req.apiVersion,
     });
   });
-  
+
   next();
 });
 
-// Middleware
-app.use(
-  cors({
-    origin: [
+// Enhanced CORS configuration for production
+const corsOptions = {
+  origin: function (origin, callback) {
+    // Allow requests with no origin (like mobile apps or curl requests)
+    if (!origin) return callback(null, true);
+
+    const allowedOrigins = [
       process.env.FRONTEND_URL_BRAIN || 'http://localhost:3000',
       'http://localhost:3000',
+      'http://localhost:3001',
       'https://brain.neoserver.dev',
-    ],
-    credentials: true,
-  }),
-);
+      'https://omi.me',
+      'https://*.omi.me',
+      'https://app.omi.me',
+      'https://brain.omi.me',
+    ];
+
+    // Check for exact matches
+    if (allowedOrigins.includes(origin)) {
+      return callback(null, true);
+    }
+
+    // Check for wildcard domain matches (*.omi.me)
+    for (const allowedOrigin of allowedOrigins) {
+      if (allowedOrigin.includes('*')) {
+        const regex = new RegExp(allowedOrigin.replace('*', '.*'));
+        if (regex.test(origin)) {
+          return callback(null, true);
+        }
+      }
+    }
+
+    // Check if it's a development environment
+    if (process.env.NODE_ENV !== 'production') {
+      // Allow localhost on any port for development
+      if (origin.match(/^https?:\/\/localhost(:\d+)?$/)) {
+        return callback(null, true);
+      }
+    }
+
+    logger.warn('CORS origin rejected', { origin, allowedOrigins });
+    callback(new Error('Not allowed by CORS'));
+  },
+  credentials: true,
+  optionsSuccessStatus: 200, // Support legacy browsers
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
+  allowedHeaders: [
+    'Origin',
+    'X-Requested-With',
+    'Content-Type',
+    'Accept',
+    'Authorization',
+    'X-Request-ID',
+    'X-API-Version',
+    'Accept-Version',
+  ],
+  exposedHeaders: [
+    'X-Request-ID',
+    'API-Version',
+    'X-RateLimit-Limit',
+    'X-RateLimit-Remaining',
+    'X-RateLimit-Reset',
+  ],
+  preflightContinue: false,
+};
+
+// Middleware
+app.use(cors(corsOptions));
 app.use(bodyParser.json({ limit: '10mb' }));
 app.use(bodyParser.urlencoded({ limit: '10mb', extended: true }));
 app.use(cookieParser());
@@ -298,6 +450,35 @@ app.use(
 );
 app.use(express.static('public'));
 
+// Metrics tracking
+const metrics = {
+  requestCount: 0,
+  errorCount: 0,
+  authenticationAttempts: 0,
+  memoryNodesCount: 0,
+  relationshipsCount: 0,
+  startTime: Date.now(),
+  lastRequestTime: Date.now(),
+};
+
+// Update request count in logging middleware
+app.use((req, res, next) => {
+  metrics.requestCount++;
+  metrics.lastRequestTime = Date.now();
+
+  // Track errors
+  const originalJson = res.json;
+  res.json = function (...args) {
+    const data = args[0];
+    if (data && data.error && res.statusCode >= 400) {
+      metrics.errorCount++;
+    }
+    return originalJson.apply(this, args);
+  };
+
+  next();
+});
+
 // Health and readiness endpoints for production orchestration
 app.get('/healthz', (_req, res) => {
   res.status(200).json({ status: 'ok' });
@@ -305,7 +486,8 @@ app.get('/healthz', (_req, res) => {
 
 app.get('/readyz', async (_req, res) => {
   try {
-    const supabaseHealthUrl = (process.env.SUPABASE_URL || '').replace(/\/$/, '') + '/auth/v1/health';
+    const supabaseHealthUrl =
+      (process.env.SUPABASE_URL || '').replace(/\/$/, '') + '/auth/v1/health';
     if (!process.env.SUPABASE_URL) {
       logger.warn('Readiness check failed: SUPABASE_URL not set');
       return res.status(503).json({ ready: false });
@@ -316,6 +498,67 @@ app.get('/readyz', async (_req, res) => {
   } catch (error) {
     logger.warn('Readiness check failed', { error: error.message });
     return res.status(503).json({ ready: false });
+  }
+});
+
+// Metrics endpoint for monitoring
+app.get('/metrics', async (req, res) => {
+  try {
+    const uptime = Date.now() - metrics.startTime;
+    const timeSinceLastRequest = Date.now() - metrics.lastRequestTime;
+
+    // Get database metrics
+    let dbMetrics = { nodes: 0, relationships: 0, users: 0 };
+    try {
+      const [nodesResult, relationshipsResult, usersResult] = await Promise.all([
+        supabase.from('memory_nodes').select('id', { count: 'exact', head: true }),
+        supabase.from('memory_relationships').select('id', { count: 'exact', head: true }),
+        supabase.from('brain_users').select('id', { count: 'exact', head: true }),
+      ]);
+
+      dbMetrics = {
+        nodes: nodesResult.count || 0,
+        relationships: relationshipsResult.count || 0,
+        users: usersResult.count || 0,
+      };
+    } catch (dbError) {
+      logger.warn('Error fetching database metrics', { error: dbError.message });
+    }
+
+    const metricsData = {
+      system: {
+        uptime: `${Math.floor(uptime / 1000)}s`,
+        uptimeMs: uptime,
+        nodeVersion: process.version,
+        environment: process.env.NODE_ENV || 'development',
+        memoryUsage: process.memoryUsage(),
+        cpuUsage: process.cpuUsage(),
+      },
+      requests: {
+        total: metrics.requestCount,
+        errors: metrics.errorCount,
+        errorRate:
+          metrics.requestCount > 0
+            ? ((metrics.errorCount / metrics.requestCount) * 100).toFixed(2) + '%'
+            : '0%',
+        lastRequestAgo: `${Math.floor(timeSinceLastRequest / 1000)}s`,
+      },
+      database: dbMetrics,
+      authentication: {
+        attempts: metrics.authenticationAttempts,
+      },
+      timestamp: new Date().toISOString(),
+    };
+
+    // Set appropriate cache headers
+    res.set('Cache-Control', 'no-cache, no-store, must-revalidate');
+    res.set('Pragma', 'no-cache');
+    res.set('Expires', '0');
+
+    res.json(metricsData);
+  } catch (error) {
+    logger.error('Error generating metrics', { error: error.message });
+    res.status(500).json({ error: 'Failed to generate metrics' });
   }
 });
 
@@ -359,7 +602,7 @@ async function loadMemoryGraph(uid) {
   } catch (error) {
     logger.error('Error loading memory graph', {
       error: error.message,
-      uid
+      uid,
     });
     throw error;
   }
@@ -465,7 +708,7 @@ Memory Status: ${
     logger.error('Error processing chat', {
       error: error.message,
       uid,
-      messageLength: message?.length || 0
+      messageLength: message?.length || 0,
     });
     throw error;
   }
@@ -555,7 +798,7 @@ async function processTextWithGPT(text) {
   } catch (error) {
     logger.error('Error processing text with GPT', {
       error: error.message,
-      textLength: text?.length || 0
+      textLength: text?.length || 0,
     });
     throw error;
   }
@@ -567,15 +810,16 @@ function requireAuth(req, res, next) {
     logger.debug('RequireAuth check', {
       sessionId: req.sessionID,
       hasSession: !!req.session,
-      hasUserId: !!(req.session && req.session.userId)
+      hasUserId: !!(req.session && req.session.userId),
     });
   }
 
   if (!req.session || !req.session.userId) {
     logger.warn('Authentication failed', {
+      requestId: req.requestId,
       ip: req.ip,
       userAgent: req.get('User-Agent'),
-      path: req.path
+      path: req.path,
     });
     return res.status(401).json({ error: 'Authentication required' });
   }
@@ -596,16 +840,19 @@ function validateUid(req, res, next) {
 }
 
 function validateTextInput(req, res, next) {
-  const { message, transcript_segments } = req.body;
+  const { message, transcript_segments, segments } = req.body;
+
+  // Support both 'segments' and 'transcript_segments' for backward compatibility
+  const actualSegments = transcript_segments || segments;
+  if (actualSegments) {
+    req.body.transcript_segments = actualSegments;
+  }
 
   if (message && (typeof message !== 'string' || message.length > 5000)) {
     return res.status(400).json({ error: 'Invalid message format or too long' });
   }
 
-  if (
-    transcript_segments &&
-    (!Array.isArray(transcript_segments) || transcript_segments.length > 100)
-  ) {
+  if (actualSegments && (!Array.isArray(actualSegments) || actualSegments.length > 100)) {
     return res.status(400).json({ error: 'Invalid transcript format or too many segments' });
   }
 
@@ -649,7 +896,7 @@ app.get('/', async (req, res) => {
 
       req.session.userId = sanitizedUid;
       req.session.loginTime = new Date().toISOString();
-      
+
       logger.info('User auto-login successful', { uid: sanitizedUid });
 
       return res.redirect('/');
@@ -669,6 +916,7 @@ app.get('/login', (req, res) => {
 // Auth endpoints
 app.post('/api/auth/login', authLimiter, validateUid, async (req, res) => {
   try {
+    metrics.authenticationAttempts++;
     const uid = req.uid;
 
     // Create or update user record
@@ -685,18 +933,22 @@ app.post('/api/auth/login', authLimiter, validateUid, async (req, res) => {
     // Force session save
     req.session.save((err) => {
       if (err) {
-        logger.error('Session save error', { error: err.message, uid });
+        logger.error('Session save error', { requestId: req.requestId, error: err.message, uid });
         return res.status(500).json({ error: 'Login failed' });
       }
 
-      logger.info('User login successful', { uid });
+      logger.info('User login successful', { requestId: req.requestId, uid });
       res.json({
         success: true,
         uid: uid,
       });
     });
   } catch (error) {
-    logger.error('Login error', { error: error.message, stack: error.stack });
+    logger.error('Login error', {
+      requestId: req.requestId,
+      error: error.message,
+      stack: error.stack,
+    });
     res.status(500).json({ error: 'Login failed' });
   }
 });
@@ -771,7 +1023,7 @@ app.put('/api/node/:nodeId', apiLimiter, requireAuth, validateNodeData, async (r
     logger.error('Node update error', {
       error: error.message,
       uid,
-      nodeId
+      nodeId,
     });
     res.status(500).json({ error: 'Error updating node' });
   }
@@ -807,7 +1059,7 @@ app.delete('/api/node/:nodeId', apiLimiter, requireAuth, async (req, res) => {
     logger.error('Node deletion error', {
       error: error.message,
       uid,
-      nodeId
+      nodeId,
     });
     res.status(500).json({ error: 'Error deleting node' });
   }
@@ -829,7 +1081,7 @@ app.post('/api/chat', apiLimiter, requireAuth, validateTextInput, async (req, re
     logger.error('Chat processing error', {
       error: error.message,
       uid,
-      messageLength: message?.length || 0
+      messageLength: message?.length || 0,
     });
     res.status(500).json({ error: 'Error processing chat' });
   }
@@ -953,7 +1205,7 @@ app.get('/api/memory-graph', apiLimiter, requireAuth, async (req, res) => {
     logger.error('Memory graph fetch error', {
       error: error.message,
       uid,
-      sample: req.query.sample
+      sample: req.query.sample,
     });
     res.status(500).json({ error: 'Error fetching memory graph' });
   }
@@ -961,15 +1213,18 @@ app.get('/api/memory-graph', apiLimiter, requireAuth, async (req, res) => {
 
 app.post('/api/process-text', apiLimiter, requireAuth, validateTextInput, async (req, res) => {
   try {
-    const { transcript_segments } = req.body;
+    const { transcript_segments, segments } = req.body;
     const uid = req.uid;
 
-    if (!transcript_segments || !Array.isArray(transcript_segments)) {
+    // Support both 'segments' and 'transcript_segments' for backward compatibility
+    const actualSegments = transcript_segments || segments;
+
+    if (!actualSegments || !Array.isArray(actualSegments)) {
       return res.status(400).json({ error: 'Transcript segments are required' });
     }
 
     let text = '';
-    for (const segment of transcript_segments) {
+    for (const segment of actualSegments) {
       if (segment.speaker && segment.text) {
         text += segment.speaker + ': ' + segment.text + '\n';
       }
@@ -994,7 +1249,7 @@ app.post('/api/process-text', apiLimiter, requireAuth, validateTextInput, async 
     logger.error('Text processing error', {
       error: error.message,
       uid,
-      segmentCount: transcript_segments?.length || 0
+      segmentCount: actualSegments?.length || 0,
     });
     res.status(500).json({ error: 'Error processing text' });
   }
@@ -1011,7 +1266,7 @@ async function deleteAllUserData(uid) {
   } catch (error) {
     logger.error('Error deleting user data', {
       error: error.message,
-      uid
+      uid,
     });
     throw error;
   }
@@ -1214,10 +1469,11 @@ app.post('/api/enrich-content', apiLimiter, requireAuth, validateInput, async (r
 // Error pages
 app.use((req, res) => {
   logger.warn('404 - Page not found', {
+    requestId: req.requestId,
     path: req.path,
     method: req.method,
     ip: req.ip,
-    userAgent: req.get('User-Agent')
+    userAgent: req.get('User-Agent'),
   });
   res.status(404).sendFile(__dirname + '/public/404.html');
 });
@@ -1225,11 +1481,12 @@ app.use((req, res) => {
 app.use((err, req, res, _next) => {
   const result = handleDatabaseError(err, 'request handling');
   logger.error('Unhandled error', {
+    requestId: req.requestId,
     error: err.message,
     stack: err.stack,
     path: req.path,
     method: req.method,
-    ip: req.ip
+    ip: req.ip,
   });
   res.status(result.status).sendFile(__dirname + '/public/500.html');
 });
@@ -1264,14 +1521,14 @@ process.on('SIGINT', () => initiateGracefulShutdown('SIGINT'));
 process.on('unhandledRejection', (reason, promise) => {
   logger.error('Unhandled Rejection', {
     reason,
-    promise
+    promise,
   });
 });
 
 process.on('uncaughtException', (error) => {
   logger.error('Uncaught Exception', {
     error: error.message,
-    stack: error.stack
+    stack: error.stack,
   });
   process.exit(1);
 });
@@ -1281,6 +1538,6 @@ const server = app.listen(port, () => {
   logger.info(`Server started successfully`, {
     port,
     environment: process.env.NODE_ENV || 'development',
-    nodeVersion: process.version
+    nodeVersion: process.version,
   });
 });
