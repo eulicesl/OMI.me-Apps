@@ -125,7 +125,12 @@ const port = process.env.PORT || 3000;
 
 
 const openai = new OpenAI({
-    apiKey: process.env.OPENAI_API_KEY
+    apiKey: process.env.OPENROUTER_API_KEY || process.env.OPENAI_API_KEY,
+    baseURL: process.env.OPENROUTER_API_KEY ? 'https://openrouter.ai/api/v1' : undefined,
+    defaultHeaders: process.env.OPENROUTER_API_KEY ? {
+        'HTTP-Referer': process.env.FRONTEND_URL_BRAIN || 'http://localhost:3000',
+        'X-Title': 'OMI Brain App'
+    } : undefined
 });
 
 app.use(bodyParser.json({ limit: '10mb' }));
@@ -275,7 +280,7 @@ Memory Status: ${context.nodes.length > 0 ?
 
     try {
         const completion = await openai.chat.completions.create({
-            model: "gpt-4o-mini",
+            model: process.env.OPENROUTER_API_KEY ? "openai/gpt-4o-mini" : "gpt-4o-mini",
             messages: [
                 {
                     role: "system",
@@ -371,7 +376,7 @@ Return empty arrays if no meaningful patterns found.`;
 
     try {
         const completion = await openai.chat.completions.create({
-            model: "gpt-4o-mini",
+            model: process.env.OPENROUTER_API_KEY ? "openai/gpt-4o-mini" : "gpt-4o-mini",
             messages: [
                 {
                     role: "system",
@@ -888,7 +893,7 @@ Provide a concise but insightful description that:
 Keep the description natural and engaging, focusing on the most meaningful connections.`;
 
         const completion = await openai.chat.completions.create({
-            model: "gpt-4o-mini",
+            model: process.env.OPENROUTER_API_KEY ? "openai/gpt-4o-mini" : "gpt-4o-mini",
             messages: [
                 {
                     role: "system",
@@ -1021,6 +1026,6 @@ app.use((err, req, res, next) => {
 });
 
 // Start server
-app.listen(port, () => {
+app.listen(port, '0.0.0.0', () => {
     console.log(`Server running on port ${port}`);
 });

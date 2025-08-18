@@ -1004,7 +1004,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
             // Add user message to chat
             const userMessageDiv = document.createElement('div');
-            userMessageDiv.className = 'message user';
+            userMessageDiv.className = 'chat-message user-message';
             userMessageDiv.textContent = message;
             chatMessages.appendChild(userMessageDiv);
             chatMessages.scrollTop = chatMessages.scrollHeight;
@@ -1026,7 +1026,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                     const data = await response.json();
 
                     const aiMessageDiv = document.createElement('div');
-                    aiMessageDiv.className = 'message ai';
+                    aiMessageDiv.className = 'chat-message ai-message';
                     aiMessageDiv.textContent = data.response;
                     chatMessages.appendChild(aiMessageDiv);
                     chatMessages.scrollTop = chatMessages.scrollHeight;
