@@ -1,40 +1,71 @@
+// Encryption helpers
+async function getKey() {
+    let keyB64 = localStorage.getItem('brainKey');
+    if (!keyB64) {
+        const cookie = document.cookie.split('; ').find(r => r.startsWith('brainKey='));
+        if (cookie) {
+            keyB64 = cookie.split('=')[1];
+            localStorage.setItem('brainKey', keyB64);
+        }
+    }
+    if (!keyB64) {
+        window.location.href = '/login.html';
+        throw new Error('Missing Brain code');
+    }
+    const raw = Uint8Array.from(atob(keyB64), c => c.charCodeAt(0));
+    return await crypto.subtle.importKey('raw', raw, 'AES-GCM', false, ['encrypt', 'decrypt']);
+}
+
+async function encryptText(text) {
+    const key = await getKey();
+    const iv = crypto.getRandomValues(new Uint8Array(12));
+    const encoded = new TextEncoder().encode(text);
+    const cipher = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, encoded);
+    return `${btoa(String.fromCharCode(...iv))}:${btoa(String.fromCharCode(...new Uint8Array(cipher)))}`;
+}
+
+async function decryptText(payload) {
+    try {
+        const [ivB64, dataB64] = payload.split(':');
+        const iv = Uint8Array.from(atob(ivB64), c => c.charCodeAt(0));
+        const data = Uint8Array.from(atob(dataB64), c => c.charCodeAt(0));
+        const key = await getKey();
+        const plain = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, key, data);
+        return new TextDecoder().decode(plain);
+    } catch (e) {
+        return payload;
+    }
+}
+
 // Authentication functions
 async function checkAuth() {
     try {
-        // First check if we have session-based authentication with the server
+        // Check if we have session-based authentication with the server
         const response = await fetch('/api/profile', {
             credentials: 'include'
         });
 
         if (response.ok) {
             const data = await response.json();
-            // Store uid in localStorage for convenience
             localStorage.setItem('uid', data.uid);
             return data.uid;
-        } else if (response.status === 401) {
-            // No valid session, redirect to login
-            localStorage.removeItem('uid');
-            window.location.href = '/login.html';
-            return null;
-        } else {
-            throw new Error('Server error');
         }
+
+        localStorage.removeItem('uid');
+        window.location.href = '/login.html';
+        return null;
     } catch (error) {
         console.error('Auth check error:', error);
-        // If there's a network error, try localStorage as fallback
-        const uid = localStorage.getItem('uid') || new URLSearchParams(window.location.search).get('uid');
-        if (!uid) {
-            window.location.href = '/login.html';
-            return null;
-        }
-        return uid;
+        window.location.href = '/login.html';
+        return null;
     }
 }
 
 function logout() {
-    // Clear auth data
-    localStorage.removeItem('uid');
-    window.location.href = '/login.html';
+    fetch('/api/auth/logout', { method: 'POST', credentials: 'include' }).finally(() => {
+        localStorage.removeItem('uid');
+        window.location.href = '/login.html';
+    });
 }
 
 // API call helper
@@ -92,8 +123,8 @@ function initScene() {
     renderer.setClearColor(0x0a0a0f, 1);
     document.getElementById('network-container').appendChild(renderer.domElement);
 
-    // Set up camera for brain-like view
-    camera.position.set(400, 200, 500);
+    // Set up camera for brain-like view with better initial positioning for larger nodes
+    camera.position.set(300, 150, 400);
     camera.lookAt(0, 0, 0);
 
     // Soft ambient light for overall visibility
@@ -115,12 +146,12 @@ function initScene() {
     controls.enableDamping = true;
     controls.dampingFactor = 0.07;  // More responsive damping
     controls.screenSpacePanning = true;
-    controls.minDistance = 200;    // Keep some distance to see structure
-    controls.maxDistance = 1000;   // Limit zoom out to maintain focus
+    controls.minDistance = 30;     // Much closer zoom for detailed node inspection
+    controls.maxDistance = 1500;   // Slightly increased max distance for better overview
     controls.rotateSpeed = 0.6;    // Smoother rotation
-    controls.zoomSpeed = 1.0;      // Standard zoom speed
+    controls.zoomSpeed = 1.2;      // Faster zoom speed for better UX
     controls.autoRotate = false;
-    controls.maxPolarAngle = Math.PI * 0.75; // Prevent viewing from too far below
+    controls.maxPolarAngle = Math.PI * 0.85; // Allow viewing from more angles
 
     // Add event listeners
     window.addEventListener('resize', onWindowResize, false);
@@ -152,28 +183,46 @@ function initPostProcessing() {
 
 // Create node object
 function createNodeObject(node) {
-    const geometry = new THREE.SphereGeometry(2, 32, 32);  // Smaller nodes
+    const geometry = new THREE.SphereGeometry(8, 32, 32);  // Larger nodes for better visibility
     const material = new THREE.MeshPhongMaterial({
         color: getNodeColor(node.type),
         emissive: getNodeColor(node.type),
-        emissiveIntensity: 0.8,  // Brighter glow
+        emissiveIntensity: 0.6,  // Slightly reduced to prevent overwhelming glow
         transparent: true,
-        opacity: 0.7  // More translucent
+        opacity: 0.8  // Less translucent for better visibility
     });
 
     const sphere = new THREE.Mesh(geometry, material);
 
-    // Add neuron pulse effect
+    // Add neuron pulse effect with dynamic scaling
     sphere.userData.pulsePhase = Math.random() * Math.PI * 2;  // Random starting phase
     sphere.userData.pulseSpeed = 0.003 + Math.random() * 0.002;  // Slightly random speed
     sphere.userData.baseScale = 1;
     sphere.userData.animate = () => {
-        const scale = sphere.userData.baseScale + Math.sin(Date.now() * sphere.userData.pulseSpeed + sphere.userData.pulsePhase) * 0.15;
-        sphere.scale.set(scale, scale, scale);
+        // Calculate dynamic scale based on camera distance
+        const distance = camera.position.distanceTo(sphere.position);
+        const minScale = 0.3;  // Minimum scale when very close
+        const maxScale = 2.0;  // Maximum scale when far away
+        const scaleRange = 800; // Distance range for scaling
+        
+        // Dynamic scale factor based on distance
+        let dynamicScale = Math.min(maxScale, Math.max(minScale, distance / scaleRange));
+        
+        // Add pulse effect to the dynamic scale
+        const pulseEffect = Math.sin(Date.now() * sphere.userData.pulseSpeed + sphere.userData.pulsePhase) * 0.08;
+        const finalScale = (sphere.userData.baseScale * dynamicScale) + pulseEffect;
+        
+        sphere.scale.set(finalScale, finalScale, finalScale);
+        
+        // Also scale the label based on distance for readability
+        if (sphere.children[1]) { // Label is typically the second child
+            const labelScale = Math.max(0.5, Math.min(2.0, distance / 300));
+            sphere.children[1].scale.set(labelScale, labelScale, labelScale);
+        }
     };
 
     // Add glow effect
-    const glowGeometry = new THREE.SphereGeometry(3, 32, 32);  // Smaller glow
+    const glowGeometry = new THREE.SphereGeometry(12, 32, 32);  // Proportionally larger glow
     const glowMaterial = new THREE.ShaderMaterial({
         uniforms: {
             color: { value: new THREE.Color(getNodeColor(node.type)) }
@@ -200,13 +249,13 @@ function createNodeObject(node) {
     const glow = new THREE.Mesh(glowGeometry, glowMaterial);
     sphere.add(glow);
 
-    // Add label
+    // Add label with better positioning for larger nodes
     const label = new SpriteText(node.name);
-    label.textHeight = 8;
+    label.textHeight = 12;  // Larger text for better readability
     label.color = '#ffffff';
-    label.backgroundColor = 'rgba(0, 0, 0, 0.5)';
-    label.padding = 2;
-    label.position.y = 10;
+    label.backgroundColor = 'rgba(0, 0, 0, 0.6)';
+    label.padding = 3;
+    label.position.y = 16;  // Further from larger node
     sphere.add(label);
 
     // Store reference to original node data
@@ -243,6 +292,10 @@ function createRelationshipLine(source, target, action) {
 
 // Update visualization with new data
 function updateVisualization(data) {
+    // Store current data for chat context
+    nodes = new Map(data.nodes.map(n => [n.id, n]));
+    relationships = data.relationships.slice();
+
     // Clear existing objects
     nodeObjects.forEach(obj => scene.remove(obj));
     lineObjects.forEach(obj => scene.remove(obj));
@@ -321,8 +374,8 @@ function updateNodePositions() {
         .force('radial', d3.forceRadial(
             d => baseRadius + Math.floor(d.index / nodesPerRing) * 40,
             0, 0).strength(0.1))
-        // Prevent node overlap
-        .force('collision', d3.forceCollide().radius(15).strength(0.3))
+        // Prevent node overlap with larger collision radius for bigger nodes
+        .force('collision', d3.forceCollide().radius(25).strength(0.3))
         // Custom force for z-positioning
         .force('custom-z', alpha => {
             nodes.forEach(node => {
@@ -425,9 +478,9 @@ function selectNode(node) {
     selectedNode = node;
 
     if (node) {
-        // Highlight selected node
-        node.material.emissiveIntensity = 2;
-        node.userData.baseScale = 1.5;
+        // Highlight selected node with enhanced visibility
+        node.material.emissiveIntensity = 1.5;  // Slightly reduced to avoid overwhelming
+        node.userData.baseScale = 1.8;  // Larger selection scale
 
         // Find and highlight connected nodes and relationships
         const connectedLines = lineObjects.filter(line =>
@@ -605,20 +658,33 @@ async function updateSelectedNode() {
     }
 
     try {
+        const encryptedName = await encryptText(newName);
+        const encryptedType = await encryptText(newType);
         const response = await apiCall(`/api/node/${selectedNode.userData.id}`, {
             method: 'PUT',
             body: JSON.stringify({
-                uid: localStorage.getItem('uid'),
-                name: newName,
-                type: newType
+                name: encryptedName,
+                type: encryptedType
             })
         });
 
         if (response.ok) {
-            const data = await response.json();
-            updateVisualization(data);
+            const encrypted = await response.json();
+            const decrypted = {
+                nodes: await Promise.all(encrypted.nodes.map(async n => ({
+                    id: n.id,
+                    type: await decryptText(n.type),
+                    name: await decryptText(n.name),
+                    connections: n.connections
+                }))),
+                relationships: await Promise.all(encrypted.relationships.map(async r => ({
+                    source: r.source,
+                    target: r.target,
+                    action: await decryptText(r.action)
+                })))
+            };
+            updateVisualization(decrypted);
             closeEditModal();
-            // Reselect the updated node
             const updatedNode = nodeObjects.get(selectedNode.userData.id);
             if (updatedNode) {
                 selectNode(updatedNode);
@@ -640,8 +706,21 @@ async function deleteSelectedNode() {
         });
 
         if (response.ok) {
-            const data = await response.json();
-            updateVisualization(data);
+            const encrypted = await response.json();
+            const decrypted = {
+                nodes: await Promise.all(encrypted.nodes.map(async n => ({
+                    id: n.id,
+                    type: await decryptText(n.type),
+                    name: await decryptText(n.name),
+                    connections: n.connections
+                }))),
+                relationships: await Promise.all(encrypted.relationships.map(async r => ({
+                    source: r.source,
+                    target: r.target,
+                    action: await decryptText(r.action)
+                })))
+            };
+            updateVisualization(decrypted);
             closeEditModal();
             selectNode(null); // Deselect node
         }
@@ -674,8 +753,7 @@ async function deleteAllData() {
         deleteBtn.innerHTML = '<span class="icon">⏳</span> Deleting...';
 
         const response = await apiCall('/api/delete-all-data', {
-            method: 'POST',
-            body: JSON.stringify({ uid })
+            method: 'POST'
         });
 
         if (response && response.ok) {
@@ -756,8 +834,21 @@ async function loadMemoryGraph() {
         if (response && response.ok) {
             const data = await response.json();
             if (data) {
-                updateVisualization(data);
-                return data;
+                const decrypted = {
+                    nodes: await Promise.all(data.nodes.map(async n => ({
+                        id: n.id,
+                        type: await decryptText(n.type),
+                        name: await decryptText(n.name),
+                        connections: n.connections
+                    }))),
+                    relationships: await Promise.all(data.relationships.map(async r => ({
+                        source: r.source,
+                        target: r.target,
+                        action: await decryptText(r.action)
+                    })))
+                };
+                updateVisualization(decrypted);
+                return decrypted;
             }
         }
     } catch (error) {
@@ -848,10 +939,32 @@ document.addEventListener('DOMContentLoaded', async () => {
                 });
 
                 if (response.ok) {
-                    const data = await response.json();
-                    updateVisualization(data);
+                    const processed = await response.json();
+                    const processedData = {
+                        nodes: processed.entities.map(e => ({ id: e.id, type: e.type, name: e.name, connections: e.connections || 0 })),
+                        relationships: processed.relationships.map(r => ({ source: r.source, target: r.target, action: r.action }))
+                    };
+                    const encryptedPayload = {
+                        entities: await Promise.all(processed.entities.map(async e => ({
+                            id: e.id,
+                            type: await encryptText(e.type),
+                            name: await encryptText(e.name),
+                            connections: e.connections || 0
+                        }))),
+                        relationships: await Promise.all(processed.relationships.map(async r => ({
+                            source: r.source,
+                            target: r.target,
+                            action: await encryptText(r.action)
+                        })))
+                    };
+                    await apiCall('/api/memory-graph', {
+                        method: 'POST',
+                        body: JSON.stringify(encryptedPayload)
+                    });
+                    
+                    // After processing, reload the complete memory graph to show all nodes
+                    await loadMemoryGraph();
 
-                    // Clear input and show success message
                     textUpload.value = '';
                     uploadStatus.innerHTML = `
                         <div class="success">
@@ -859,7 +972,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                             Text processed successfully
                         </div>
                         <div class="stats">
-                            Added ${data.nodes.length} nodes and ${data.relationships.length} connections to your memory graph
+                            Added ${processedData.nodes.length} nodes and ${processedData.relationships.length} connections to your memory graph
                         </div>
                     `;
                 }
@@ -900,14 +1013,18 @@ document.addEventListener('DOMContentLoaded', async () => {
             chatInput.value = '';
 
             try {
+                const context = {
+                    nodes: Array.from(nodes.values()),
+                    relationships
+                };
+                const key = localStorage.getItem('brainKey');
                 const response = await apiCall('/api/chat', {
                     method: 'POST',
-                    body: JSON.stringify({ message })
+                    body: JSON.stringify({ message, context, key })
                 });
                 if (response) {
                     const data = await response.json();
 
-                    // Add AI response to chat
                     const aiMessageDiv = document.createElement('div');
                     aiMessageDiv.className = 'message ai';
                     aiMessageDiv.textContent = data.response;
@@ -993,9 +1110,9 @@ document.addEventListener('DOMContentLoaded', async () => {
 
                     // Click handler to focus on node
                     resultDiv.addEventListener('click', () => {
-                        // Smooth camera transition
+                        // Smooth camera transition with optimal distance for larger nodes
                         const nodePos = node.position;
-                        const distance = 150;  // Fixed distance for consistent view
+                        const distance = 100;  // Closer distance for better view of larger nodes
                         const targetPos = new THREE.Vector3(
                             nodePos.x + distance,
                             nodePos.y + distance,
@@ -1067,14 +1184,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
 
     // Load initial memory graph
-    apiCall('/api/memory-graph')
-        .then(response => response && response.json())
-        .then(data => {
-            if (data) {
-                updateVisualization(data);
-            }
-        })
-        .catch(console.error);
+    loadMemoryGraph();
 
     // Initialize mobile UI toggle
     const mobileToggle = document.getElementById('mobile-toggle');
