@@ -203,7 +203,7 @@ function createNotificationPrompt(messages) {
 
     const systemPrompt = `The Person you are talking to: {{{{user_name}}}}
     
-    Here are some information about the user which you can use to personalize your comments:
+    Here is some information about the user which you can use to personalize your comments:
     {{{{user_facts}}}}
     
     Previous conversations for context (if available):
