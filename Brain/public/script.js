@@ -1271,6 +1271,51 @@ BEST PRACTICES:
 For support: support@brain-app.com
 `;
             
+            // Check if we're in a sandboxed iframe (OMI app environment)
+            const isSandboxed = window.self !== window.top;
+            
+            if (isSandboxed) {
+                // In sandbox: Show key in a copyable format instead of downloading
+                await Swal.fire({
+                    title: '🔐 Your Encryption Key',
+                    html: `
+                        <div style="text-align: left;">
+                            <p style="color: #ffc107; margin-bottom: 15px;">
+                                <strong>⚠️ Downloads are restricted in the app sandbox.</strong>
+                                <br>Copy your key below and save it securely:
+                            </p>
+                            <textarea 
+                                readonly
+                                onclick="this.select()"
+                                style="width: 100%; height: 100px; padding: 10px; margin: 10px 0; 
+                                       background: rgba(0,0,0,0.3); border: 1px solid rgba(0,255,170,0.3); 
+                                       border-radius: 4px; color: #00ffaa; font-family: monospace; 
+                                       font-size: 12px; resize: none;">${key}</textarea>
+                            <button onclick="navigator.clipboard.writeText('${key}').then(() => {
+                                Swal.fire('Copied!', 'Key copied to clipboard', 'success');
+                            })" style="background: rgba(0,255,170,0.2); border: 1px solid rgba(0,255,170,0.4);
+                                       color: #00ffaa; padding: 10px 20px; border-radius: 8px; cursor: pointer;">
+                                📋 Copy Key
+                            </button>
+                            <div style="margin-top: 20px; padding: 15px; background: rgba(255,193,7,0.1); 
+                                        border: 1px solid rgba(255,193,7,0.3); border-radius: 8px;">
+                                <strong>Next Steps:</strong>
+                                <ol style="margin: 10px 0; padding-left: 20px;">
+                                    <li>Copy the key above</li>
+                                    <li>Save it in your password manager</li>
+                                    <li>Or email it to yourself (mark as important)</li>
+                                </ol>
+                            </div>
+                        </div>
+                    `,
+                    confirmButtonText: 'Done',
+                    confirmButtonColor: '#00ffaa',
+                    width: '600px'
+                });
+                return;
+            }
+            
+            // Normal environment: Download the file
             const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
