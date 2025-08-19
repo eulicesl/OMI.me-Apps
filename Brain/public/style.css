@@ -283,6 +283,7 @@ html {
     border-radius: 16px;
     font-size: 14px;
     line-height: 1.6;
+    color: var(--color-text);  /* Fix: Add white text color */
     animation: slideInFade 0.4s ease;
     max-width: 85%;
     word-break: break-word;
