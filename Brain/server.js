@@ -125,12 +125,7 @@ const port = process.env.PORT || 3000;
 
 
 const openai = new OpenAI({
-    apiKey: process.env.OPENROUTER_API_KEY || process.env.OPENAI_API_KEY,
-    baseURL: process.env.OPENROUTER_API_KEY ? 'https://openrouter.ai/api/v1' : undefined,
-    defaultHeaders: process.env.OPENROUTER_API_KEY ? {
-        'HTTP-Referer': process.env.FRONTEND_URL_BRAIN || 'http://localhost:3000',
-        'X-Title': 'OMI Brain App'
-    } : undefined
+    apiKey: process.env.OPENAI_API_KEY
 });
 
 app.use(bodyParser.json({ limit: '10mb' }));
@@ -280,7 +275,7 @@ Memory Status: ${context.nodes.length > 0 ?
 
     try {
         const completion = await openai.chat.completions.create({
-            model: process.env.OPENROUTER_API_KEY ? "openai/gpt-4o-mini" : "gpt-4o-mini",
+            model: "gpt-4o-mini",
             messages: [
                 {
                     role: "system",
@@ -376,7 +371,7 @@ Return empty arrays if no meaningful patterns found.`;
 
     try {
         const completion = await openai.chat.completions.create({
-            model: process.env.OPENROUTER_API_KEY ? "openai/gpt-4o-mini" : "gpt-4o-mini",
+            model: "gpt-4o-mini",
             messages: [
                 {
                     role: "system",
@@ -572,37 +567,35 @@ app.post('/api/reset-data', requireAuth, async (req, res) => {
     try {
         const uid = req.uid;
         
-        // Delete all user's brain nodes
-        await supabase
-            .from('brain_nodes')
-            .delete()
-            .eq('uid', uid);
+        // Use a single stored procedure to reset user data atomically
+        const { error: resetError } = await supabase.rpc('reset_user_data', { uid });
+        if (resetError) {
+            console.error('Reset data error:', resetError);
+            return res.status(500).json({ error: 'Failed to reset data' });
+        }
         
-        // Delete all user's brain relationships
-        await supabase
-            .from('brain_relationships')
-            .delete()
-            .eq('uid', uid);
-        
-        // Reset user's encryption key status
-        await supabase
-            .from('brain_users')
-            .update({ 
-                code_check: null,
-                has_key: false 
-            })
-            .eq('uid', uid);
-        
-        // Clear session
-        req.session.destroy();
-        
-        res.json({ 
-            success: true, 
-            message: 'All data reset. Please login again to generate a new key.' 
+        // Destroy the session with a callback to ensure it's cleared before responding
+        req.session.destroy((err) => {
+            if (err) {
+                console.error('Session destruction error:', err);
+                return res.status(500).json({ error: 'Failed to destroy session' });
+            }
+            // Clear the session cookie with proper options
+            res.clearCookie('connect.sid', {
+                path: '/',
+                httpOnly: true,
+                sameSite: 'lax',
+                secure: process.env.NODE_ENV === 'production'
+            });
+            
+            return res.json({
+                success: true,
+                message: 'All data reset. Please login again to generate a new key.'
+            });
         });
     } catch (error) {
         console.error('Reset data error:', error);
-        res.status(500).json({ error: 'Failed to reset data' });
+        return res.status(500).json({ error: 'Failed to reset data' });
     }
 });
 
@@ -932,7 +925,7 @@ Provide a concise but insightful description that:
 Keep the description natural and engaging, focusing on the most meaningful connections.`;
 
         const completion = await openai.chat.completions.create({
-            model: process.env.OPENROUTER_API_KEY ? "openai/gpt-4o-mini" : "gpt-4o-mini",
+            model: "gpt-4o-mini",
             messages: [
                 {
                     role: "system",
@@ -1065,6 +1058,6 @@ app.use((err, req, res, next) => {
 });
 
 // Start server
-app.listen(port, '0.0.0.0', () => {
+app.listen(port, () => {
     console.log(`Server running on port ${port}`);
 });
