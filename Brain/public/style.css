@@ -299,6 +299,7 @@ html {
     margin-left: auto;
     box-shadow: 0 4px 12px rgba(0, 255, 170, 0.15);
     position: relative;
+    color: #ffffff;
 }
 
 .user-message::after {
@@ -320,6 +321,7 @@ html {
     margin-right: auto;
     box-shadow: 0 4px 12px rgba(255, 20, 147, 0.12);
     position: relative;
+    color: #ffffff;
 }
 
 .ai-message::after {
