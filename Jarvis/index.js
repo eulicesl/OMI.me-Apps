@@ -388,7 +388,7 @@ app.get('/analytics', async (req, res) => {
 
 // Start the server
 const port = process.env.PORT || 3000;
-app.listen(port, () => {
+app.listen(port, '0.0.0.0', () => {
     console.log(`Jarvis app listening at http://localhost:${port}`);
 });
 
