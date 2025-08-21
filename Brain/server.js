@@ -1,8 +1,3 @@
-/*
- * Copyright (c) 2025 Neo (github.com/neooriginal)
- * All rights reserved.
- */
-
 require('dotenv').config();
 const express = require('express');
 const OpenAI = require('openai');
