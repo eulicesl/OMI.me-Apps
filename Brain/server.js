@@ -1,3 +1,8 @@
+/*
+ * Copyright (c) 2025 Neo (github.com/neooriginal)
+ * All rights reserved.
+ */
+
 require('dotenv').config();
 const express = require('express');
 const OpenAI = require('openai');
@@ -6,17 +11,16 @@ const { createClient } = require('@supabase/supabase-js');
 const axios = require('axios');
 const cookieParser = require('cookie-parser');
 const session = require('express-session');
+const crypto = require('crypto');
 const sanitizeHtml = require('sanitize-html');
 const { URL } = require('url');
 const fetch = require('node-fetch');
-const crypto = require('crypto');
 
 // Initialize Supabase client
 const supabase = createClient(
     process.env.SUPABASE_URL,
     process.env.SUPABASE_ANON_KEY
 );
-
 
 // Generic error handler to prevent leaking sensitive info
 function handleDatabaseError(error, operation) {
@@ -38,19 +42,9 @@ async function createTables() {
                 CREATE TABLE IF NOT EXISTS brain_users (
                     id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
                     uid TEXT UNIQUE NOT NULL,
-                    code_check TEXT,
-                    has_key BOOLEAN DEFAULT false,
                     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
                 );
             `
-        });
-
-        await supabase.rpc('exec_sql', {
-            sql_query: `ALTER TABLE brain_users ADD COLUMN IF NOT EXISTS code_check TEXT;`
-        });
-
-        await supabase.rpc('exec_sql', {
-            sql_query: `ALTER TABLE brain_users ADD COLUMN IF NOT EXISTS has_key BOOLEAN DEFAULT false;`
         });
 
         // Create memory_nodes table
@@ -97,60 +91,22 @@ async function createTables() {
 
 createTables().catch(console.error);
 
-function decryptText(payload, keyB64) {
-    try {
-        const [ivB64, dataB64] = payload.split(':');
-        const iv = Buffer.from(ivB64, 'base64');
-        const data = Buffer.from(dataB64, 'base64');
-        const key = Buffer.from(keyB64, 'base64');
-        const decipher = crypto.createDecipheriv('aes-256-gcm', key, iv);
-        const ciphertext = data.slice(0, -16);
-        const authTag = data.slice(-16);
-        decipher.setAuthTag(authTag);
-        const decrypted = Buffer.concat([decipher.update(ciphertext), decipher.final()]);
-        return decrypted.toString('utf8');
-    } catch {
-        return null;
-    }
-}
-
 const app = express();
-app.set('trust proxy', 1); // Trust Render's proxy for secure cookies
 const port = process.env.PORT || 3000;
 
-
-// Configure AI client - support both OpenRouter and OpenAI
-const useOpenRouter = process.env.OPENROUTER_API_KEY && !process.env.FORCE_OPENAI;
+// Initialize OpenAI
 const openai = new OpenAI({
-    apiKey: useOpenRouter 
-        ? process.env.OPENROUTER_API_KEY 
-        : (process.env.OPENAI_API_KEY ? process.env.OPENAI_API_KEY.trim() : ''),
-    baseURL: useOpenRouter ? 'https://openrouter.ai/api/v1' : undefined
+    baseURL: "https://openrouter.ai/api/v1",
+    apiKey: process.env.OPENROUTER_API_KEY
 });
 
 app.use(bodyParser.json({ limit: '10mb' }));
 app.use(bodyParser.urlencoded({ limit: '10mb', extended: true }));
 app.use(cookieParser());
 
-// Session configuration for production
-const sessionConfig = {
-    secret: process.env.SESSION_SECRET || 'brain-app-default-secret-please-change-in-production',
-    resave: false,
-    saveUninitialized: false,
-    cookie: {
-        secure: process.env.NODE_ENV === 'production', // Only use secure cookies in production
-        httpOnly: true,
-        maxAge: 24 * 60 * 60 * 1000, // 24 hours
-        sameSite: process.env.NODE_ENV === 'production' ? 'strict' : 'lax'
-    }
-};
-
-// Add domain setting for production if specified
-if (process.env.SESSION_DOMAIN) {
-    sessionConfig.cookie.domain = process.env.SESSION_DOMAIN;
-}
-
-app.use(session(sessionConfig));
+app.use(session({
+    secret: process.env.SESSION_SECRET || crypto.randomBytes(64).toString('hex')
+}));
 app.use(express.static(__dirname + '/public'));
 
 app.get("/privacy", (req, res) => {
@@ -215,6 +171,7 @@ async function saveMemoryGraph(uid, newData) {
                 ]);
         }
 
+        // Save new relationships
         for (const rel of newData.relationships) {
             await supabase
                 .from('memory_relationships')
@@ -233,10 +190,10 @@ async function saveMemoryGraph(uid, newData) {
 }
 
 // Process chat with efficient context
-async function processChatWithGPT(message, context) {
-    const idToNode = new Map(context.nodes.map(n => [n.id, n]));
-    const contextString = `People and Places: ${context.nodes.map(n => n.name).join(', ')}\n` +
-        `Facts: ${context.relationships.map(r => `${idToNode.get(r.source)?.name || r.source} ${r.action} ${idToNode.get(r.target)?.name || r.target}`).join('. ')}`;
+async function processChatWithGPT(uid, message) {
+    const memoryGraph = await getcontextArray(uid);
+    const contextString = `People and Places: ${Array.from(memoryGraph.nodes.values()).map(n => n.name).join(', ')}\n` +
+        `Facts: ${memoryGraph.relationships.map(r => `${r.source} ${r.action} ${r.target}`).join('. ')}`;
 
     const systemPrompt = `You are a friendly and engaging AI companion with access to these memories:
 
@@ -269,13 +226,13 @@ When responding:
    - Suggest possibilities and connections
    - Show curiosity about what you're discussing
 
-Memory Status: ${context.nodes.length > 0 ?
-            `I've got quite a collection here - ${context.nodes.length} memories all connected in interesting ways!` :
+Memory Status: ${memoryGraph.nodes.length > 0 ?
+            `I've got quite a collection here - ${memoryGraph.nodes.length} memories all connected in interesting ways!` :
             "I don't have any memories stored yet, but I'm excited to learn!"}`;
 
     try {
         const completion = await openai.chat.completions.create({
-            model: useOpenRouter ? "openai/gpt-4o-mini" : "gpt-4o-mini",
+            model: "openai/gpt-4o",
             messages: [
                 {
                     role: "system",
@@ -297,81 +254,70 @@ Memory Status: ${context.nodes.length > 0 ?
     }
 }
 
-
-// Process text with GPT-4 to extract entities and relationships
-async function processTextWithGPT(text, existingMemory = { nodes: new Map(), relationships: [] }) {
-    // Convert existing nodes to a more usable format for the prompt
-    const existingNodes = Array.from(existingMemory.nodes.values());
-    const existingRelationships = existingMemory.relationships;
-    
-    // Create context strings for existing memory
-    const existingNodesContext = existingNodes.length > 0 ?
-        `\nEXISTING NODES (REUSE THESE IDs WHEN POSSIBLE):\n${existingNodes.map(n => `- ${n.id}: ${n.name} (${n.type})`).join('\n')}` :
-        '';
-    
-    const existingRelationshipsContext = existingRelationships.length > 0 ?
-        `\nEXISTING RELATIONSHIPS (REUSE THESE PATTERNS):\n${existingRelationships.map(r => `- ${r.source} → ${r.target}: ${r.action}`).slice(0, 20).join('\n')}` :
-        '';
-
-    const prompt = `Analyze this text like a human brain processing new information. Extract key entities and their relationships, focusing on logical connections and cognitive patterns.
-
-IMPORTANT: Before creating new entities, check if they already exist in the memory graph below. If an entity matches or is very similar to an existing one, REUSE the existing node ID instead of creating a new one.
-
-${existingNodesContext}${existingRelationshipsContext}
-
-Text to analyze: "${text}"
-
-Format response as JSON:
-{
-    "entities": [
-        {
-            "id": "ORB-EntityName OR existing-node-id",
-            "type": "person|location|event|concept",
-            "name": "Original Name"
-        }
-    ],
-    "relationships": [
-        {
-            "source": "node-id-1",
-            "target": "node-id-2",
-            "action": "description of relationship"
-        }
-    ]
+async function getcontextArray(uid) {
+    const memoryGraph = await loadMemoryGraph(uid);
+    return memoryGraph;
 }
 
-Guidelines for brain-like processing:
-1. Entity Recognition Priority:
-   - FIRST: Check if entity matches existing nodes (same person, place, concept)
-   - If match found: Use existing node ID, keep existing name
-   - If no match: Create new entity with ORB-EntityName format
-   - People: Identify as agents (ORB-FirstName format for new ones)
-   - Locations: Places that provide spatial context
-   - Events: Temporal markers connecting other entities
-   - Concepts: Abstract ideas linking multiple entities
+// Process text with GPT-4 to extract entities and relationships
+async function processTextWithGPT(text) {
+    const prompt = `Analyze this text like a human brain processing new information. Extract key entities and their relationships, focusing on logical connections and cognitive patterns. Format as JSON:
 
-2. Relationship Analysis:
-   - Check existing relationships for similar patterns
-   - Reuse similar action descriptions when appropriate
-   - Focus on cause and effect, temporal sequences
-   - Include contextual links and logical dependencies
+    {
+        "entities": [
+            {
+                "id": "ORB-EntityName",
+                "type": "person|location|event|concept",
+                "name": "Original Name"
+            }
+        ],
+        "relationships": [
+            {
+                "source": "ORB-EntityName1",
+                "target": "ORB-EntityName2",
+                "action": "description of relationship"
+            }
+        ]
+    }
 
-3. Memory Integration Rules:
-   - Prioritize connecting to existing nodes over creating new ones
-   - If uncertain about entity match, favor reusing existing nodes
-   - Only create new entities for genuinely new information
-   - Link new information to existing patterns when possible
+    Text: "${text}"
 
-4. Quality Control:
-   - Only extract significant, memorable information
-   - Focus on actionable relationships
-   - Avoid creating duplicate or near-duplicate entities
-   - Ensure relationships make logical sense
+    Guidelines for brain-like processing:
+    1. Entity Recognition:
+       - People: Identify as agents who can perform actions (ORB-FirstName format)
+       - Locations: Places that provide context and spatial relationships
+       - Events: Temporal markers that connect other entities
+       - Concepts: Abstract ideas that link multiple entities
 
-Return empty arrays if no meaningful patterns found.`;
+    2. Relationship Analysis:
+       - Cause and Effect: Look for direct impacts between entities
+       - Temporal Sequences: How events and actions flow
+       - Logical Dependencies: What relies on what
+       - Contextual Links: How environment affects actions
+
+    3. Pattern Recognition:
+       - Find recurring themes or behaviors
+       - Identify hierarchical relationships
+       - Connect related concepts
+       - Establish meaningful associations
+
+    4. Cognitive Rules:
+       - Only extract significant, memorable information
+       - Focus on actionable or impactful relationships
+       - Prioritize unusual or notable connections
+       - Link new information to existing patterns
+
+    Create relationships that mirror how human memory works:
+    - Use active, specific verbs for relationships
+    - Make connections bidirectional when logical
+    - Include context in relationship descriptions
+    - Connect abstract concepts to concrete examples
+
+    Return empty arrays if no meaningful patterns found.`;
 
     try {
         const completion = await openai.chat.completions.create({
-            model: useOpenRouter ? "openai/gpt-4o-mini" : "gpt-4o-mini",
+            model: "openai/gpt-4o",
             messages: [
                 {
                     role: "system",
@@ -396,14 +342,16 @@ Return empty arrays if no meaningful patterns found.`;
 
 // Authentication middleware
 function requireAuth(req, res, next) {
-    if (!req.session) {
-        return res.status(401).json({ error: 'No session - please login again' });
+    console.log('RequireAuth - Session ID:', req.sessionID);
+    console.log('RequireAuth - Session data:', req.session);
+    console.log('RequireAuth - Cookies:', req.headers.cookie);
+
+    if (!req.session || !req.session.userId) {
+        console.log('RequireAuth - Authentication failed: No session or userId');
+        return res.status(401).json({ error: 'Authentication required' });
     }
 
-    if (!req.session.userId) {
-        return res.status(401).json({ error: 'Session invalid - please login again' });
-    }
-
+    console.log('RequireAuth - Authentication successful for UID:', req.session.userId);
     req.uid = req.session.userId;
     next();
 }
@@ -436,11 +384,11 @@ function validateTextInput(req, res, next) {
 function validateNodeData(req, res, next) {
     const { name, type } = req.body;
 
-    if (!name || typeof name !== 'string' || name.length > 1000) {
+    if (!name || typeof name !== 'string' || name.length > 200) {
         return res.status(400).json({ error: 'Invalid node name' });
     }
 
-    if (!type || typeof type !== 'string' || type.length > 1000) {
+    if (!type || typeof type !== 'string' || !['person', 'location', 'event', 'concept'].includes(type)) {
         return res.status(400).json({ error: 'Invalid node type' });
     }
 
@@ -451,7 +399,30 @@ app.get("/overview", (req, res) => {
     res.sendFile(__dirname + '/public/overview.html');
 });
 
-app.get("/", (req, res) => {
+app.get("/", async (req, res) => {
+    const uid = req.query.uid;
+
+    if (uid && typeof uid === 'string' && uid.length >= 3 && uid.length <= 50) {
+        try {
+            const sanitizedUid = uid.replace(/[^a-zA-Z0-9-_]/g, '');
+
+            await supabase
+                .from('brain_users')
+                .upsert([
+                    {
+                        uid: sanitizedUid
+                    }
+                ]);
+
+            req.session.userId = sanitizedUid;
+            req.session.loginTime = new Date().toISOString();
+
+            return res.redirect('/');
+        } catch (error) {
+            console.error('Auto-login error:', error);
+        }
+    }
+
     res.sendFile(__dirname + '/public/main.html');
 });
 
@@ -465,6 +436,7 @@ app.post("/api/auth/login", validateUid, async (req, res) => {
     try {
         const uid = req.uid;
 
+        // Create or update user record
         await supabase
             .from('brain_users')
             .upsert([
@@ -473,15 +445,11 @@ app.post("/api/auth/login", validateUid, async (req, res) => {
                 }
             ]);
 
-        const { data: userRow } = await supabase
-            .from('brain_users')
-            .select('has_key')
-            .eq('uid', uid)
-            .single();
-
+        // Set session and ensure it's saved
         req.session.userId = uid;
         req.session.loginTime = new Date().toISOString();
 
+        // Force session save
         req.session.save((err) => {
             if (err) {
                 console.error('Session save error:', err);
@@ -490,8 +458,7 @@ app.post("/api/auth/login", validateUid, async (req, res) => {
 
             res.json({
                 success: true,
-                uid: uid,
-                hasKey: userRow?.has_key || false
+                uid: uid
             });
         });
     } catch (error) {
@@ -530,72 +497,6 @@ app.get('/api/profile', requireAuth, async (req, res) => {
     } catch (error) {
         console.error('Profile error:', error);
         res.status(500).json({ error: 'Error fetching profile' });
-    }
-});
-
-app.get('/api/code-check', requireAuth, async (req, res) => {
-    try {
-        const { data, error } = await supabase
-            .from('brain_users')
-            .select('code_check')
-            .eq('uid', req.uid)
-            .single();
-        if (error) {
-            return res.json({ cipher: null });
-        }
-        res.json({ cipher: data.code_check });
-    } catch (err) {
-        res.json({ cipher: null });
-    }
-});
-
-app.post('/api/code-check', requireAuth, async (req, res) => {
-    try {
-        const { cipher } = req.body;
-        await supabase
-            .from('brain_users')
-            .update({ code_check: cipher, has_key: true })
-            .eq('uid', req.uid);
-        res.json({ success: true });
-    } catch (error) {
-        res.status(500).json({ error: 'Failed to save verification' });
-    }
-});
-
-// Reset user data endpoint - allows starting fresh with new key
-app.post('/api/reset-data', requireAuth, async (req, res) => {
-    try {
-        const uid = req.uid;
-        
-        // Use a single stored procedure to reset user data atomically
-        const { error: resetError } = await supabase.rpc('reset_user_data', { p_uid: uid });
-        if (resetError) {
-            console.error('Reset data error:', resetError);
-            return res.status(500).json({ error: 'Failed to reset data' });
-        }
-        
-        // Destroy the session with a callback to ensure it's cleared before responding
-        req.session.destroy((err) => {
-            if (err) {
-                console.error('Session destruction error:', err);
-                return res.status(500).json({ error: 'Failed to destroy session' });
-            }
-            // Clear the session cookie with proper options
-            res.clearCookie('connect.sid', {
-                path: '/',
-                httpOnly: true,
-                sameSite: 'lax',
-                secure: process.env.NODE_ENV === 'production'
-            });
-            
-            return res.json({
-                success: true,
-                message: 'All data reset. Please login again to generate a new key.'
-            });
-        });
-    } catch (error) {
-        console.error('Reset data error:', error);
-        return res.status(500).json({ error: 'Failed to reset data' });
     }
 });
 
@@ -676,34 +577,14 @@ app.delete('/api/node/:nodeId', requireAuth, async (req, res) => {
 // Protected API endpoints
 app.post('/api/chat', requireAuth, validateTextInput, async (req, res) => {
     try {
-        const { message, context, key } = req.body;
+        const { message } = req.body;
+        const uid = req.uid;
 
         if (!message || typeof message !== 'string') {
             return res.status(400).json({ error: 'Message is required' });
         }
 
-        let finalContext = context;
-
-        if (key) {
-            const memoryGraph = await loadMemoryGraph(req.uid);
-            const nodes = [];
-            for (const node of memoryGraph.nodes.values()) {
-                nodes.push({
-                    id: node.id,
-                    type: decryptText(node.type, key),
-                    name: decryptText(node.name, key),
-                    connections: node.connections
-                });
-            }
-            const relationships = memoryGraph.relationships.map(r => ({
-                source: r.source,
-                target: r.target,
-                action: decryptText(r.action, key)
-            }));
-            finalContext = { nodes, relationships };
-        }
-
-        const response = await processChatWithGPT(message, finalContext || { nodes: [], relationships: [] });
+        const response = await processChatWithGPT(uid, message);
         res.json({ response });
     } catch (error) {
         console.error('Error:', error);
@@ -786,17 +667,6 @@ app.get('/api/memory-graph', requireAuth, async (req, res) => {
     }
 });
 
-app.post('/api/memory-graph', requireAuth, async (req, res) => {
-    try {
-        const uid = req.uid;
-        await saveMemoryGraph(uid, req.body);
-        res.json({ success: true });
-    } catch (error) {
-        console.error('Error saving memory graph:', error);
-        res.status(500).json({ error: 'Error saving memory graph' });
-    }
-});
-
 app.post('/api/process-text', requireAuth, validateTextInput, async (req, res) => {
     try {
         const { transcript_segments } = req.body;
@@ -817,11 +687,17 @@ app.post('/api/process-text', requireAuth, validateTextInput, async (req, res) =
             return res.status(400).json({ error: 'No valid text content found' });
         }
 
-        // Load existing memory graph to avoid creating duplicates
-        const existingMemory = await loadMemoryGraph(uid);
-        
-        const processedData = await processTextWithGPT(text, existingMemory);
-        res.json(processedData);
+        const processedData = await processTextWithGPT(text);
+        await saveMemoryGraph(uid, processedData);
+
+        // Get updated memory graph
+        const memoryGraph = await loadMemoryGraph(uid);
+        const visualizationData = {
+            nodes: Array.from(memoryGraph.nodes.values()),
+            relationships: memoryGraph.relationships
+        };
+
+        res.json(visualizationData);
     } catch (error) {
         console.error('Error:', error);
         res.status(500).json({ error: 'Error processing text' });
@@ -925,7 +801,7 @@ Provide a concise but insightful description that:
 Keep the description natural and engaging, focusing on the most meaningful connections.`;
 
         const completion = await openai.chat.completions.create({
-            model: useOpenRouter ? "openai/gpt-4o-mini" : "gpt-4o-mini",
+            model: "openai/gpt-4o",
             messages: [
                 {
                     role: "system",
@@ -1057,16 +933,7 @@ app.use((err, req, res, next) => {
     res.status(result.status).sendFile(__dirname + '/public/500.html');
 });
 
-// Health check endpoint for deployment monitoring
-app.get('/health', (req, res) => {
-    res.status(200).json({ 
-        status: 'healthy',
-        timestamp: new Date().toISOString(),
-        uptime: process.uptime()
-    });
-});
-
-// Start server - bind to all interfaces for deployment
-app.listen(port, '0.0.0.0', () => {
+// Start server
+app.listen(port, () => {
     console.log(`Server running on port ${port}`);
 });

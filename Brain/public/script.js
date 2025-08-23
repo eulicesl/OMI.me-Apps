@@ -1,71 +1,40 @@
-// Encryption helpers
-async function getKey() {
-    let keyB64 = localStorage.getItem('brainKey');
-    if (!keyB64) {
-        const cookie = document.cookie.split('; ').find(r => r.startsWith('brainKey='));
-        if (cookie) {
-            keyB64 = cookie.split('=')[1];
-            localStorage.setItem('brainKey', keyB64);
-        }
-    }
-    if (!keyB64) {
-        window.location.href = '/login.html';
-        throw new Error('Missing Brain code');
-    }
-    const raw = Uint8Array.from(atob(keyB64), c => c.charCodeAt(0));
-    return await crypto.subtle.importKey('raw', raw, 'AES-GCM', false, ['encrypt', 'decrypt']);
-}
-
-async function encryptText(text) {
-    const key = await getKey();
-    const iv = crypto.getRandomValues(new Uint8Array(12));
-    const encoded = new TextEncoder().encode(text);
-    const cipher = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, encoded);
-    return `${btoa(String.fromCharCode(...iv))}:${btoa(String.fromCharCode(...new Uint8Array(cipher)))}`;
-}
-
-async function decryptText(payload) {
-    try {
-        const [ivB64, dataB64] = payload.split(':');
-        const iv = Uint8Array.from(atob(ivB64), c => c.charCodeAt(0));
-        const data = Uint8Array.from(atob(dataB64), c => c.charCodeAt(0));
-        const key = await getKey();
-        const plain = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, key, data);
-        return new TextDecoder().decode(plain);
-    } catch (e) {
-        return payload;
-    }
-}
-
 // Authentication functions
 async function checkAuth() {
     try {
-        // Check if we have session-based authentication with the server
+        // First check if we have session-based authentication with the server
         const response = await fetch('/api/profile', {
             credentials: 'include'
         });
 
         if (response.ok) {
             const data = await response.json();
+            // Store uid in localStorage for convenience
             localStorage.setItem('uid', data.uid);
             return data.uid;
+        } else if (response.status === 401) {
+            // No valid session, redirect to login
+            localStorage.removeItem('uid');
+            window.location.href = '/login.html';
+            return null;
+        } else {
+            throw new Error('Server error');
         }
-
-        localStorage.removeItem('uid');
-        window.location.href = '/login.html';
-        return null;
     } catch (error) {
         console.error('Auth check error:', error);
-        window.location.href = '/login.html';
-        return null;
+        // If there's a network error, try localStorage as fallback
+        const uid = localStorage.getItem('uid') || new URLSearchParams(window.location.search).get('uid');
+        if (!uid) {
+            window.location.href = '/login.html';
+            return null;
+        }
+        return uid;
     }
 }
 
 function logout() {
-    fetch('/api/auth/logout', { method: 'POST', credentials: 'include' }).finally(() => {
-        localStorage.removeItem('uid');
-        window.location.href = '/login.html';
-    });
+    // Clear auth data
+    localStorage.removeItem('uid');
+    window.location.href = '/login.html';
 }
 
 // API call helper
@@ -123,8 +92,8 @@ function initScene() {
     renderer.setClearColor(0x0a0a0f, 1);
     document.getElementById('network-container').appendChild(renderer.domElement);
 
-    // Set up camera for brain-like view with better initial positioning for larger nodes
-    camera.position.set(300, 150, 400);
+    // Set up camera for brain-like view
+    camera.position.set(400, 200, 500);
     camera.lookAt(0, 0, 0);
 
     // Soft ambient light for overall visibility
@@ -146,12 +115,12 @@ function initScene() {
     controls.enableDamping = true;
     controls.dampingFactor = 0.07;  // More responsive damping
     controls.screenSpacePanning = true;
-    controls.minDistance = 30;     // Much closer zoom for detailed node inspection
-    controls.maxDistance = 1500;   // Slightly increased max distance for better overview
+    controls.minDistance = 200;    // Keep some distance to see structure
+    controls.maxDistance = 1000;   // Limit zoom out to maintain focus
     controls.rotateSpeed = 0.6;    // Smoother rotation
-    controls.zoomSpeed = 1.2;      // Faster zoom speed for better UX
+    controls.zoomSpeed = 1.0;      // Standard zoom speed
     controls.autoRotate = false;
-    controls.maxPolarAngle = Math.PI * 0.85; // Allow viewing from more angles
+    controls.maxPolarAngle = Math.PI * 0.75; // Prevent viewing from too far below
 
     // Add event listeners
     window.addEventListener('resize', onWindowResize, false);
@@ -183,46 +152,28 @@ function initPostProcessing() {
 
 // Create node object
 function createNodeObject(node) {
-    const geometry = new THREE.SphereGeometry(8, 32, 32);  // Larger nodes for better visibility
+    const geometry = new THREE.SphereGeometry(2, 32, 32);  // Smaller nodes
     const material = new THREE.MeshPhongMaterial({
         color: getNodeColor(node.type),
         emissive: getNodeColor(node.type),
-        emissiveIntensity: 0.6,  // Slightly reduced to prevent overwhelming glow
+        emissiveIntensity: 0.8,  // Brighter glow
         transparent: true,
-        opacity: 0.8  // Less translucent for better visibility
+        opacity: 0.7  // More translucent
     });
 
     const sphere = new THREE.Mesh(geometry, material);
 
-    // Add neuron pulse effect with dynamic scaling
+    // Add neuron pulse effect
     sphere.userData.pulsePhase = Math.random() * Math.PI * 2;  // Random starting phase
     sphere.userData.pulseSpeed = 0.003 + Math.random() * 0.002;  // Slightly random speed
     sphere.userData.baseScale = 1;
     sphere.userData.animate = () => {
-        // Calculate dynamic scale based on camera distance
-        const distance = camera.position.distanceTo(sphere.position);
-        const minScale = 0.3;  // Minimum scale when very close
-        const maxScale = 2.0;  // Maximum scale when far away
-        const scaleRange = 800; // Distance range for scaling
-        
-        // Dynamic scale factor based on distance
-        let dynamicScale = Math.min(maxScale, Math.max(minScale, distance / scaleRange));
-        
-        // Add pulse effect to the dynamic scale
-        const pulseEffect = Math.sin(Date.now() * sphere.userData.pulseSpeed + sphere.userData.pulsePhase) * 0.08;
-        const finalScale = (sphere.userData.baseScale * dynamicScale) + pulseEffect;
-        
-        sphere.scale.set(finalScale, finalScale, finalScale);
-        
-        // Also scale the label based on distance for readability
-        if (sphere.children[1]) { // Label is typically the second child
-            const labelScale = Math.max(0.5, Math.min(2.0, distance / 300));
-            sphere.children[1].scale.set(labelScale, labelScale, labelScale);
-        }
+        const scale = sphere.userData.baseScale + Math.sin(Date.now() * sphere.userData.pulseSpeed + sphere.userData.pulsePhase) * 0.15;
+        sphere.scale.set(scale, scale, scale);
     };
 
     // Add glow effect
-    const glowGeometry = new THREE.SphereGeometry(12, 32, 32);  // Proportionally larger glow
+    const glowGeometry = new THREE.SphereGeometry(3, 32, 32);  // Smaller glow
     const glowMaterial = new THREE.ShaderMaterial({
         uniforms: {
             color: { value: new THREE.Color(getNodeColor(node.type)) }
@@ -249,13 +200,13 @@ function createNodeObject(node) {
     const glow = new THREE.Mesh(glowGeometry, glowMaterial);
     sphere.add(glow);
 
-    // Add label with better positioning for larger nodes
+    // Add label
     const label = new SpriteText(node.name);
-    label.textHeight = 12;  // Larger text for better readability
+    label.textHeight = 8;
     label.color = '#ffffff';
-    label.backgroundColor = 'rgba(0, 0, 0, 0.6)';
-    label.padding = 3;
-    label.position.y = 16;  // Further from larger node
+    label.backgroundColor = 'rgba(0, 0, 0, 0.5)';
+    label.padding = 2;
+    label.position.y = 10;
     sphere.add(label);
 
     // Store reference to original node data
@@ -292,10 +243,6 @@ function createRelationshipLine(source, target, action) {
 
 // Update visualization with new data
 function updateVisualization(data) {
-    // Store current data for chat context
-    nodes = new Map(data.nodes.map(n => [n.id, n]));
-    relationships = data.relationships.slice();
-
     // Clear existing objects
     nodeObjects.forEach(obj => scene.remove(obj));
     lineObjects.forEach(obj => scene.remove(obj));
@@ -374,8 +321,8 @@ function updateNodePositions() {
         .force('radial', d3.forceRadial(
             d => baseRadius + Math.floor(d.index / nodesPerRing) * 40,
             0, 0).strength(0.1))
-        // Prevent node overlap with larger collision radius for bigger nodes
-        .force('collision', d3.forceCollide().radius(25).strength(0.3))
+        // Prevent node overlap
+        .force('collision', d3.forceCollide().radius(15).strength(0.3))
         // Custom force for z-positioning
         .force('custom-z', alpha => {
             nodes.forEach(node => {
@@ -478,9 +425,9 @@ function selectNode(node) {
     selectedNode = node;
 
     if (node) {
-        // Highlight selected node with enhanced visibility
-        node.material.emissiveIntensity = 1.5;  // Slightly reduced to avoid overwhelming
-        node.userData.baseScale = 1.8;  // Larger selection scale
+        // Highlight selected node
+        node.material.emissiveIntensity = 2;
+        node.userData.baseScale = 1.5;
 
         // Find and highlight connected nodes and relationships
         const connectedLines = lineObjects.filter(line =>
@@ -658,33 +605,20 @@ async function updateSelectedNode() {
     }
 
     try {
-        const encryptedName = await encryptText(newName);
-        const encryptedType = await encryptText(newType);
         const response = await apiCall(`/api/node/${selectedNode.userData.id}`, {
             method: 'PUT',
             body: JSON.stringify({
-                name: encryptedName,
-                type: encryptedType
+                uid: localStorage.getItem('uid'),
+                name: newName,
+                type: newType
             })
         });
 
         if (response.ok) {
-            const encrypted = await response.json();
-            const decrypted = {
-                nodes: await Promise.all(encrypted.nodes.map(async n => ({
-                    id: n.id,
-                    type: await decryptText(n.type),
-                    name: await decryptText(n.name),
-                    connections: n.connections
-                }))),
-                relationships: await Promise.all(encrypted.relationships.map(async r => ({
-                    source: r.source,
-                    target: r.target,
-                    action: await decryptText(r.action)
-                })))
-            };
-            updateVisualization(decrypted);
+            const data = await response.json();
+            updateVisualization(data);
             closeEditModal();
+            // Reselect the updated node
             const updatedNode = nodeObjects.get(selectedNode.userData.id);
             if (updatedNode) {
                 selectNode(updatedNode);
@@ -706,21 +640,8 @@ async function deleteSelectedNode() {
         });
 
         if (response.ok) {
-            const encrypted = await response.json();
-            const decrypted = {
-                nodes: await Promise.all(encrypted.nodes.map(async n => ({
-                    id: n.id,
-                    type: await decryptText(n.type),
-                    name: await decryptText(n.name),
-                    connections: n.connections
-                }))),
-                relationships: await Promise.all(encrypted.relationships.map(async r => ({
-                    source: r.source,
-                    target: r.target,
-                    action: await decryptText(r.action)
-                })))
-            };
-            updateVisualization(decrypted);
+            const data = await response.json();
+            updateVisualization(data);
             closeEditModal();
             selectNode(null); // Deselect node
         }
@@ -753,7 +674,8 @@ async function deleteAllData() {
         deleteBtn.innerHTML = '<span class="icon">⏳</span> Deleting...';
 
         const response = await apiCall('/api/delete-all-data', {
-            method: 'POST'
+            method: 'POST',
+            body: JSON.stringify({ uid })
         });
 
         if (response && response.ok) {
@@ -827,65 +749,6 @@ function animate() {
     composer.render();
 }
 
-// Export loadMemoryGraph function for use in other pages
-async function loadMemoryGraph() {
-    try {
-        const response = await apiCall('/api/memory-graph');
-        if (response && response.ok) {
-            const data = await response.json();
-            if (data) {
-                const decrypted = {
-                    nodes: await Promise.all(data.nodes.map(async n => ({
-                        id: n.id,
-                        type: await decryptText(n.type),
-                        name: await decryptText(n.name),
-                        connections: n.connections
-                    }))),
-                    relationships: await Promise.all(data.relationships.map(async r => ({
-                        source: r.source,
-                        target: r.target,
-                        action: await decryptText(r.action)
-                    })))
-                };
-                updateVisualization(decrypted);
-                return decrypted;
-            }
-        }
-    } catch (error) {
-        console.error('Error loading memory graph:', error);
-    }
-    return null;
-}
-
-// Make functions globally available for other scripts
-window.initScene = initScene;
-window.loadMemoryGraph = loadMemoryGraph;
-
-// Auto-expanding textarea functionality
-function setupAutoExpandingTextarea() {
-    const chatInput = document.getElementById('chat-input');
-    if (!chatInput) return;
-    
-    // Auto-expand on input
-    chatInput.addEventListener('input', function() {
-        // Reset height to auto to get the correct scrollHeight
-        this.style.height = 'auto';
-        
-        // Set height based on content, with min and max limits
-        const newHeight = Math.min(Math.max(this.scrollHeight, 45), 120);
-        this.style.height = newHeight + 'px';
-    });
-    
-    // Reset height after sending message
-    chatInput.addEventListener('keydown', function(e) {
-        if (e.key === 'Enter' && !e.shiftKey) {
-            setTimeout(() => {
-                this.style.height = '45px';
-            }, 100);
-        }
-    });
-}
-
 // Initialize everything when the document is loaded
 document.addEventListener('DOMContentLoaded', async () => {
     // Check authentication with server
@@ -902,9 +765,6 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     initScene();
     animate();
-    
-    // Initialize auto-expanding textarea
-    setupAutoExpandingTextarea();
 
     // Initialize upload functionality
     const processTextBtn = document.getElementById('process-text');
@@ -939,32 +799,10 @@ document.addEventListener('DOMContentLoaded', async () => {
                 });
 
                 if (response.ok) {
-                    const processed = await response.json();
-                    const processedData = {
-                        nodes: processed.entities.map(e => ({ id: e.id, type: e.type, name: e.name, connections: e.connections || 0 })),
-                        relationships: processed.relationships.map(r => ({ source: r.source, target: r.target, action: r.action }))
-                    };
-                    const encryptedPayload = {
-                        entities: await Promise.all(processed.entities.map(async e => ({
-                            id: e.id,
-                            type: await encryptText(e.type),
-                            name: await encryptText(e.name),
-                            connections: e.connections || 0
-                        }))),
-                        relationships: await Promise.all(processed.relationships.map(async r => ({
-                            source: r.source,
-                            target: r.target,
-                            action: await encryptText(r.action)
-                        })))
-                    };
-                    await apiCall('/api/memory-graph', {
-                        method: 'POST',
-                        body: JSON.stringify(encryptedPayload)
-                    });
-                    
-                    // After processing, reload the complete memory graph to show all nodes
-                    await loadMemoryGraph();
+                    const data = await response.json();
+                    updateVisualization(data);
 
+                    // Clear input and show success message
                     textUpload.value = '';
                     uploadStatus.innerHTML = `
                         <div class="success">
@@ -972,7 +810,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                             Text processed successfully
                         </div>
                         <div class="stats">
-                            Added ${processedData.nodes.length} nodes and ${processedData.relationships.length} connections to your memory graph
+                            Added ${data.nodes.length} nodes and ${data.relationships.length} connections to your memory graph
                         </div>
                     `;
                 }
@@ -1004,7 +842,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
             // Add user message to chat
             const userMessageDiv = document.createElement('div');
-            userMessageDiv.className = 'chat-message user-message';
+            userMessageDiv.className = 'message user';
             userMessageDiv.textContent = message;
             chatMessages.appendChild(userMessageDiv);
             chatMessages.scrollTop = chatMessages.scrollHeight;
@@ -1013,20 +851,16 @@ document.addEventListener('DOMContentLoaded', async () => {
             chatInput.value = '';
 
             try {
-                const context = {
-                    nodes: Array.from(nodes.values()),
-                    relationships
-                };
-                const key = localStorage.getItem('brainKey');
                 const response = await apiCall('/api/chat', {
                     method: 'POST',
-                    body: JSON.stringify({ message, context, key })
+                    body: JSON.stringify({ message })
                 });
                 if (response) {
                     const data = await response.json();
 
+                    // Add AI response to chat
                     const aiMessageDiv = document.createElement('div');
-                    aiMessageDiv.className = 'chat-message ai-message';
+                    aiMessageDiv.className = 'message ai';
                     aiMessageDiv.textContent = data.response;
                     chatMessages.appendChild(aiMessageDiv);
                     chatMessages.scrollTop = chatMessages.scrollHeight;
@@ -1110,9 +944,9 @@ document.addEventListener('DOMContentLoaded', async () => {
 
                     // Click handler to focus on node
                     resultDiv.addEventListener('click', () => {
-                        // Smooth camera transition with optimal distance for larger nodes
+                        // Smooth camera transition
                         const nodePos = node.position;
-                        const distance = 100;  // Closer distance for better view of larger nodes
+                        const distance = 150;  // Fixed distance for consistent view
                         const targetPos = new THREE.Vector3(
                             nodePos.x + distance,
                             nodePos.y + distance,
@@ -1184,7 +1018,14 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
 
     // Load initial memory graph
-    loadMemoryGraph();
+    apiCall('/api/memory-graph')
+        .then(response => response && response.json())
+        .then(data => {
+            if (data) {
+                updateVisualization(data);
+            }
+        })
+        .catch(console.error);
 
     // Initialize mobile UI toggle
     const mobileToggle = document.getElementById('mobile-toggle');
@@ -1199,16 +1040,12 @@ document.addEventListener('DOMContentLoaded', async () => {
         const newMenuOverlay = menuOverlay.cloneNode(true);
         menuOverlay.parentNode.replaceChild(newMenuOverlay, menuOverlay);
 
-        // Add new event listeners with better feedback
+        // Add new event listeners
         newMobileToggle.addEventListener('click', () => {
             console.log('Mobile toggle clicked');
-            const isActive = uiContainer.classList.toggle('active');
+            uiContainer.classList.toggle('active');
             newMenuOverlay.classList.toggle('active');
             newMobileToggle.classList.toggle('active');
-            
-            // Update aria attributes for accessibility
-            newMobileToggle.setAttribute('aria-expanded', isActive);
-            newMobileToggle.setAttribute('aria-label', isActive ? 'Close menu' : 'Open menu');
         });
 
         newMenuOverlay.addEventListener('click', () => {
@@ -1219,261 +1056,4 @@ document.addEventListener('DOMContentLoaded', async () => {
             }
         });
     }
-    
-    // Enterprise-grade key management functions
-    async function exportEncryptionKey() {
-        try {
-            const key = localStorage.getItem('brainKey');
-            if (!key) {
-                await Swal.fire({
-                    title: 'No Key Found',
-                    text: 'No encryption key found on this device.',
-                    icon: 'warning',
-                    confirmButtonColor: '#00ffaa'
-                });
-                return;
-            }
-            
-            // Create a formatted text file with instructions
-            const timestamp = new Date().toISOString().split('T')[0];
-            const uid = document.getElementById('profile-uid').textContent || 'unknown';
-            const content = `BRAIN ENCRYPTION KEY BACKUP
-================================
-Generated: ${new Date().toLocaleString()}
-User ID: ${uid}
-Device: ${navigator.userAgent.split('(')[1].split(')')[0]}
-
-YOUR ENCRYPTION KEY:
-${key}
-
-IMPORTANT SECURITY INFORMATION:
--------------------------------
-• This key encrypts all your Brain app data
-• Store this file in a secure location (password manager recommended)
-• Never share this key with anyone
-• You'll need this key to access your data on other devices
-• If you lose this key, your data cannot be recovered
-
-HOW TO USE THIS KEY:
---------------------
-1. When logging in from a new device, you'll be prompted for this key
-2. Copy the key from this file (the long string above)
-3. Paste it when prompted during login
-4. The key will be securely stored on that device
-
-BEST PRACTICES:
----------------
-• Store in a password manager (1Password, Bitwarden, etc.)
-• Keep a backup in a secure cloud storage
-• Consider printing and storing in a safe
-• Delete this file from Downloads after securing it
-
-For support: support@brain-app.com
-`;
-            
-            // Check if we're in a sandboxed iframe (OMI app environment)
-            const isSandboxed = window.self !== window.top;
-            
-            if (isSandboxed) {
-                // In sandbox: Show key in a copyable format instead of downloading
-                await Swal.fire({
-                    title: '🔐 Your Encryption Key',
-                    html: `
-                        <div style="text-align: left;">
-                            <p style="color: #ffc107; margin-bottom: 15px;">
-                                <strong>⚠️ Downloads are restricted in the app sandbox.</strong>
-                                <br>Copy your key below and save it securely:
-                            </p>
-                            <textarea 
-                                readonly
-                                onclick="this.select()"
-                                style="width: 100%; height: 100px; padding: 10px; margin: 10px 0; 
-                                       background: rgba(0,0,0,0.3); border: 1px solid rgba(0,255,170,0.3); 
-                                       border-radius: 4px; color: #00ffaa; font-family: monospace; 
-                                       font-size: 12px; resize: none;">${key}</textarea>
-                            <button onclick="navigator.clipboard.writeText('${key}').then(() => {
-                                Swal.fire('Copied!', 'Key copied to clipboard', 'success');
-                            })" style="background: rgba(0,255,170,0.2); border: 1px solid rgba(0,255,170,0.4);
-                                       color: #00ffaa; padding: 10px 20px; border-radius: 8px; cursor: pointer;">
-                                📋 Copy Key
-                            </button>
-                            <div style="margin-top: 20px; padding: 15px; background: rgba(255,193,7,0.1); 
-                                        border: 1px solid rgba(255,193,7,0.3); border-radius: 8px;">
-                                <strong>Next Steps:</strong>
-                                <ol style="margin: 10px 0; padding-left: 20px;">
-                                    <li>Copy the key above</li>
-                                    <li>Save it in your password manager</li>
-                                    <li>Or email it to yourself (mark as important)</li>
-                                </ol>
-                            </div>
-                        </div>
-                    `,
-                    confirmButtonText: 'Done',
-                    confirmButtonColor: '#00ffaa',
-                    width: '600px'
-                });
-                return;
-            }
-            
-            // Normal environment: Download the file
-            const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = `brain-key-backup-${timestamp}.txt`;
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
-            URL.revokeObjectURL(url);
-            
-            await Swal.fire({
-                title: 'Key Downloaded Successfully',
-                html: `
-                    <div style="text-align: left;">
-                        <p>Your encryption key has been saved to:</p>
-                        <code style="background: rgba(0,0,0,0.2); padding: 5px; border-radius: 4px;">
-                            brain-key-backup-${timestamp}.txt
-                        </code>
-                        <br><br>
-                        <strong style="color: #ffc107;">⚠️ Next Steps:</strong>
-                        <ol style="margin: 10px 0; padding-left: 20px;">
-                            <li>Store this file in your password manager</li>
-                            <li>Delete it from your Downloads folder</li>
-                            <li>Never share this key with anyone</li>
-                        </ol>
-                    </div>
-                `,
-                icon: 'success',
-                confirmButtonColor: '#00ffaa'
-            });
-        } catch (error) {
-            console.error('Export error:', error);
-            Swal.fire({
-                title: 'Export Failed',
-                text: 'Unable to export encryption key. Please try copying it instead.',
-                icon: 'error',
-                confirmButtonColor: '#ff1493'
-            });
-        }
-    }
-    
-    async function copyEncryptionKey() {
-        try {
-            const key = localStorage.getItem('brainKey');
-            if (!key) {
-                await Swal.fire({
-                    title: 'No Key Found',
-                    text: 'No encryption key found on this device.',
-                    icon: 'warning',
-                    confirmButtonColor: '#00ffaa'
-                });
-                return;
-            }
-            
-            // Try modern clipboard API first
-            if (navigator.clipboard && window.isSecureContext) {
-                await navigator.clipboard.writeText(key);
-            } else {
-                // Fallback for older browsers
-                const textarea = document.createElement('textarea');
-                textarea.value = key;
-                textarea.style.position = 'fixed';
-                textarea.style.opacity = '0';
-                document.body.appendChild(textarea);
-                textarea.select();
-                document.execCommand('copy');
-                document.body.removeChild(textarea);
-            }
-            
-            await Swal.fire({
-                title: 'Key Copied!',
-                html: `
-                    <div style="text-align: center;">
-                        <p>Your encryption key has been copied to the clipboard.</p>
-                        <br>
-                        <strong style="color: #ffc107;">⚠️ Security Tips:</strong>
-                        <ul style="text-align: left; margin: 10px auto; max-width: 300px;">
-                            <li>Paste it immediately into your password manager</li>
-                            <li>Don't paste it in unsecured locations</li>
-                            <li>Clear your clipboard after use</li>
-                        </ul>
-                    </div>
-                `,
-                icon: 'success',
-                timer: 5000,
-                timerProgressBar: true,
-                confirmButtonColor: '#00ffaa'
-            });
-        } catch (error) {
-            console.error('Copy error:', error);
-            // Show manual copy dialog
-            const key = localStorage.getItem('brainKey');
-            await Swal.fire({
-                title: 'Manual Copy Required',
-                html: `
-                    <div>
-                        <p>Select and copy your key:</p>
-                        <input type="text" 
-                               value="${key}" 
-                               readonly 
-                               style="width: 100%; padding: 10px; margin: 10px 0; background: rgba(0,0,0,0.2); border: 1px solid rgba(0,255,170,0.3); border-radius: 4px; color: #00ffaa; font-family: monospace; font-size: 12px;"
-                               onclick="this.select()">
-                    </div>
-                `,
-                confirmButtonColor: '#00ffaa'
-            });
-        }
-    }
-    
-    async function showKeyInstructions() {
-        await Swal.fire({
-            title: '🔐 How to Manage Your Encryption Key',
-            html: `
-                <div style="text-align: left; max-height: 400px; overflow-y: auto;">
-                    <h4 style="color: #00ffaa; margin-top: 20px;">What is this key?</h4>
-                    <p>Your encryption key is a unique code that protects all your Brain app data using AES-256 encryption, the same standard used by banks and governments.</p>
-                    
-                    <h4 style="color: #00ffaa; margin-top: 20px;">Why is it important?</h4>
-                    <ul>
-                        <li>It's the only way to decrypt your data</li>
-                        <li>Without it, your data is permanently inaccessible</li>
-                        <li>Not even we can recover it if lost</li>
-                    </ul>
-                    
-                    <h4 style="color: #00ffaa; margin-top: 20px;">How to store it safely:</h4>
-                    <ol>
-                        <li><strong>Password Manager</strong> (Recommended)
-                            <br>Store it in 1Password, Bitwarden, LastPass, etc.</li>
-                        <li><strong>Secure Cloud Storage</strong>
-                            <br>Save in an encrypted folder in your cloud drive</li>
-                        <li><strong>Physical Backup</strong>
-                            <br>Print and store in a safe or safety deposit box</li>
-                    </ol>
-                    
-                    <h4 style="color: #00ffaa; margin-top: 20px;">Using on other devices:</h4>
-                    <ol>
-                        <li>Login with your UID on the new device</li>
-                        <li>When prompted, enter your encryption key</li>
-                        <li>The key will be securely saved on that device</li>
-                    </ol>
-                    
-                    <h4 style="color: #ff1493; margin-top: 20px;">⚠️ Never:</h4>
-                    <ul>
-                        <li>Share your key with anyone</li>
-                        <li>Store it in plain text emails</li>
-                        <li>Save it in unencrypted notes apps</li>
-                        <li>Post it on social media or forums</li>
-                    </ul>
-                </div>
-            `,
-            confirmButtonText: 'Got it!',
-            confirmButtonColor: '#00ffaa',
-            width: '600px'
-        });
-    }
-    
-    // Make functions globally available
-    window.exportEncryptionKey = exportEncryptionKey;
-    window.copyEncryptionKey = copyEncryptionKey;
-    window.showKeyInstructions = showKeyInstructions;
 });

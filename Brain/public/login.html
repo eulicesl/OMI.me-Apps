@@ -8,7 +8,6 @@
     <link rel="icon" type="image/png" href="logo.jpg">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="style.css">
-    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
     <style>
         .login-container {
             position: fixed;
@@ -166,209 +165,6 @@
             color: rgba(255, 255, 255, 0.3);
             font-size: 12px;
         }
-        .copy-btn {
-            padding: 8px 16px;
-            border-radius: 6px;
-            background: rgba(0, 255, 170, 0.15);
-            border: 1px solid rgba(0, 255, 170, 0.3);
-            color: #00ffaa;
-            cursor: pointer;
-            transition: all 0.3s ease;
-            font-size: 14px;
-            font-weight: 500;
-            display: flex;
-            align-items: center;
-            gap: 6px;
-            min-width: 80px;
-            justify-content: center;
-        }
-        
-        .copy-btn:hover {
-            background: rgba(0, 255, 170, 0.25);
-            transform: translateY(-1px);
-            box-shadow: 0 2px 8px rgba(0, 255, 170, 0.2);
-        }
-        
-        .copy-btn:active {
-            transform: translateY(0);
-        }
-        
-        .copy-btn.copied {
-            background: rgba(40, 200, 40, 0.15);
-            border-color: rgba(40, 200, 40, 0.3);
-            color: #28c828;
-        }
-        
-        .copy-btn.copied:hover {
-            background: rgba(40, 200, 40, 0.25);
-        }
-        
-        .code-container {
-            display: flex;
-            gap: 10px;
-            align-items: center;
-            margin: 10px 0;
-        }
-        
-        .code-input {
-            flex: 1;
-            padding: 12px;
-            background: rgba(255, 255, 255, 0.05);
-            border: 1px solid rgba(0, 255, 170, 0.2);
-            border-radius: 8px;
-            color: #fff;
-            font-family: 'Courier New', monospace;
-            font-size: 13px;
-            text-align: center;
-        }
-        
-        .warning-text {
-            margin-top: 15px;
-            padding: 15px;
-            background: rgba(255, 193, 7, 0.1);
-            border: 1px solid rgba(255, 193, 7, 0.3);
-            border-radius: 8px;
-            color: #ffc107;
-            font-size: 14px;
-            line-height: 1.4;
-        }
-
-        /* SweetAlert2 Brain Key Modal Styles */
-        .brain-key-modal {
-            background: rgba(15, 15, 25, 0.98) !important;
-            border: 2px solid rgba(0, 255, 170, 0.3) !important;
-            border-radius: 16px !important;
-            backdrop-filter: blur(10px);
-            -webkit-backdrop-filter: blur(10px);
-            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5) !important;
-        }
-
-        .brain-key-modal .swal2-title {
-            color: #00ffaa !important;
-            font-size: 24px !important;
-            font-weight: 600 !important;
-            margin-bottom: 20px !important;
-        }
-
-        .brain-key-content {
-            color: #ffffff !important;
-        }
-
-        .brain-key-content .code-container {
-            background: rgba(0, 0, 0, 0.2);
-            border: 1px solid rgba(0, 255, 170, 0.2);
-            border-radius: 8px;
-            padding: 15px;
-            margin: 15px 0;
-        }
-
-        .brain-key-content .warning-text {
-            background: rgba(255, 193, 7, 0.1) !important;
-            border: 1px solid rgba(255, 193, 7, 0.3) !important;
-            color: #ffc107 !important;
-            border-radius: 8px;
-            padding: 15px;
-            margin: 15px 0;
-        }
-
-        .brain-key-content .warning-text strong {
-            color: #ffc107 !important;
-        }
-
-        .brain-key-modal .swal2-confirm {
-            background: rgba(0, 255, 170, 0.2) !important;
-            border: 1px solid rgba(0, 255, 170, 0.4) !important;
-            color: #00ffaa !important;
-            border-radius: 8px !important;
-            padding: 12px 24px !important;
-            font-weight: 500 !important;
-            transition: all 0.3s ease !important;
-        }
-
-        .brain-key-modal .swal2-confirm:hover {
-            background: rgba(0, 255, 170, 0.3) !important;
-            transform: translateY(-1px) !important;
-            box-shadow: 0 4px 12px rgba(0, 255, 170, 0.2) !important;
-        }
-
-        .brain-key-modal .swal2-confirm:focus {
-            box-shadow: 0 0 0 3px rgba(0, 255, 170, 0.3) !important;
-        }
-
-        /* SweetAlert2 Auth Key Input Modal Styles */
-        .brain-auth-modal {
-            background: rgba(15, 15, 25, 0.98) !important;
-            border: 2px solid rgba(0, 255, 170, 0.3) !important;
-            border-radius: 16px !important;
-            backdrop-filter: blur(10px);
-            -webkit-backdrop-filter: blur(10px);
-            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5) !important;
-        }
-
-        .brain-auth-modal .swal2-title {
-            color: #00ffaa !important;
-            font-size: 24px !important;
-            font-weight: 600 !important;
-            margin-bottom: 20px !important;
-        }
-
-        .brain-auth-modal .swal2-input {
-            background: rgba(255, 255, 255, 0.05) !important;
-            border: 1px solid rgba(0, 255, 170, 0.3) !important;
-            border-radius: 8px !important;
-            color: #ffffff !important;
-            font-family: 'Courier New', monospace !important;
-            font-size: 14px !important;
-            padding: 12px !important;
-            text-align: center !important;
-            transition: all 0.3s ease !important;
-        }
-
-        .brain-auth-modal .swal2-input:focus {
-            border-color: rgba(0, 255, 170, 0.6) !important;
-            background: rgba(255, 255, 255, 0.08) !important;
-            box-shadow: 0 0 0 3px rgba(0, 255, 170, 0.15) !important;
-        }
-
-        .brain-auth-modal .swal2-input::placeholder {
-            color: rgba(255, 255, 255, 0.5) !important;
-        }
-
-        .brain-auth-modal .swal2-confirm {
-            background: rgba(0, 255, 170, 0.2) !important;
-            border: 1px solid rgba(0, 255, 170, 0.4) !important;
-            color: #00ffaa !important;
-            border-radius: 8px !important;
-            padding: 12px 24px !important;
-            font-weight: 500 !important;
-            transition: all 0.3s ease !important;
-        }
-
-        .brain-auth-modal .swal2-confirm:hover {
-            background: rgba(0, 255, 170, 0.3) !important;
-            transform: translateY(-1px) !important;
-            box-shadow: 0 4px 12px rgba(0, 255, 170, 0.2) !important;
-        }
-
-        .brain-auth-modal .swal2-confirm:focus {
-            box-shadow: 0 0 0 3px rgba(0, 255, 170, 0.3) !important;
-        }
-
-        .brain-auth-modal .swal2-cancel {
-            background: rgba(255, 68, 68, 0.15) !important;
-            border: 1px solid rgba(255, 68, 68, 0.3) !important;
-            color: #ff4444 !important;
-            border-radius: 8px !important;
-            padding: 12px 24px !important;
-            font-weight: 500 !important;
-            transition: all 0.3s ease !important;
-        }
-
-        .brain-auth-modal .swal2-cancel:hover {
-            background: rgba(255, 68, 68, 0.25) !important;
-            transform: translateY(-1px) !important;
-            box-shadow: 0 4px 12px rgba(255, 68, 68, 0.2) !important;
-        }
     </style>
 </head>
 
@@ -381,385 +177,72 @@
             </div>
             <button type="submit" class="login-btn">Login</button>
         </form>
-        <div style="margin-top: 20px; text-align: center;">
-            <a href="#" onclick="showResetOption(); return false;" style="color: rgba(255, 68, 68, 0.8); font-size: 14px; text-decoration: none;">Lost your encryption key? Reset data</a>
-        </div>
         <a href="/privacy.html" class="privacy-link">Privacy Policy</a>
     </div>
     <div class="version">v1.0.0</div>
 
     <script>
-        async function encryptText(text, keyB64) {
-            const raw = Uint8Array.from(atob(keyB64), c => c.charCodeAt(0));
-            const key = await crypto.subtle.importKey('raw', raw, 'AES-GCM', false, ['encrypt', 'decrypt']);
-            const iv = crypto.getRandomValues(new Uint8Array(12));
-            const encoded = new TextEncoder().encode(text);
-            const cipher = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, encoded);
-            return `${btoa(String.fromCharCode(...iv))}:${btoa(String.fromCharCode(...new Uint8Array(cipher)))}`;
-        }
-
-        async function decryptText(payload, keyB64) {
-            try {
-                const [ivB64, dataB64] = payload.split(':');
-                const iv = Uint8Array.from(atob(ivB64), c => c.charCodeAt(0));
-                const data = Uint8Array.from(atob(dataB64), c => c.charCodeAt(0));
-                const raw = Uint8Array.from(atob(keyB64), c => c.charCodeAt(0));
-                const key = await crypto.subtle.importKey('raw', raw, 'AES-GCM', false, ['decrypt']);
-                const plain = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, key, data);
-                return new TextDecoder().decode(plain);
-            } catch {
-                return null;
-            }
-        }
-
-        // Helper function for styled authentication popup with validation
-        async function showAuthPopup(storedKey = '') {
-            const result = await Swal.fire({
-                title: 'Enter your Brain code',
-                input: 'text',
-                inputPlaceholder: 'Paste code',
-                inputValue: storedKey,
-                allowOutsideClick: false,
-                customClass: {
-                    popup: 'brain-auth-modal'
-                },
-                preConfirm: async (value) => {
-                    if (!value) {
-                        Swal.showValidationMessage('Code is required');
-                        return false;
-                    }
-                    
-                    const key = value.trim();
-                    try {
-                        const res = await fetch('/api/code-check', { credentials: 'include' });
-                        const { cipher } = await res.json();
-                        if (cipher) {
-                            const plain = await decryptText(cipher, key);
-                            if (plain !== 'verify') {
-                                Swal.showValidationMessage('Invalid code');
-                                return false;
-                            }
-                        }
-                        return key;
-                    } catch (error) {
-                        Swal.showValidationMessage('Failed to verify code');
-                        return false;
-                    }
-                }
-            });
-            
-            if (result.isConfirmed && result.value) {
-                return result.value;
-            } else {
-                throw new Error('Code required');
-            }
-        }
-
+        // Store origin path when page loads
         document.addEventListener('DOMContentLoaded', () => {
-            const uid = new URLSearchParams(window.location.search).get('uid');
+            // Store main path for login redirect
+            console.log('/');
+
+            sessionStorage.setItem('loginOrigin', '/');
+
+            let uid = getParams('uid');
             if (uid) {
                 document.getElementById('uid').value = uid;
             }
         });
 
-        async function showResetOption() {
-            const uid = document.getElementById('uid').value;
-            if (!uid) {
-                await Swal.fire({
-                    title: 'UID Required',
-                    text: 'Please enter your UID first',
-                    icon: 'info',
-                    confirmButtonColor: '#00ffaa',
-                    customClass: {
-                        popup: 'brain-auth-modal'
-                    }
-                });
-                document.getElementById('uid').focus();
-                return;
-            }
-            
-            const result = await Swal.fire({
-                title: '⚠️ Reset All Data?',
-                html: `
-                    <div style="text-align: left; padding: 20px; color: #ffffff;">
-                        <p><strong>This will permanently delete:</strong></p>
-                        <ul style="margin: 10px 0;">
-                            <li>All your memories and connections</li>
-                            <li>Your current encryption key</li>
-                            <li>All encrypted data</li>
-                        </ul>
-                        <p style="margin-top: 20px; color: #ff1493;">
-                            <strong>This action cannot be undone!</strong>
-                        </p>
-                        <p style="margin-top: 10px; color: #00ffaa;">
-                            You'll get a fresh start with a new encryption key.
-                        </p>
-                    </div>
-                `,
-                icon: 'warning',
-                showCancelButton: true,
-                confirmButtonColor: '#ff1493',
-                cancelButtonColor: '#00ffaa',
-                confirmButtonText: 'Yes, Reset Everything',
-                cancelButtonText: 'Cancel',
-                customClass: {
-                    popup: 'brain-auth-modal'
-                }
-            });
-            
-            if (result.isConfirmed) {
-                // Second confirmation - more serious tone
-                const finalConfirm = await Swal.fire({
-                    title: '🛑 FINAL CONFIRMATION',
-                    html: `
-                        <div style="text-align: center; padding: 20px; color: #ffffff;">
-                            <p style="font-size: 18px; color: #ff1493; font-weight: bold;">
-                                This action is IRREVERSIBLE
-                            </p>
-                            <p style="margin: 20px 0; font-size: 16px;">
-                                Type <strong style="color: #ff1493;">DELETE</strong> to confirm
-                            </p>
-                            <p style="color: rgba(255, 255, 255, 0.7); font-size: 14px;">
-                                All your memories, connections, and encrypted data will be permanently erased.
-                            </p>
-                        </div>
-                    `,
-                    input: 'text',
-                    inputPlaceholder: 'Type DELETE to confirm',
-                    inputValidator: (value) => {
-                        if (!value || value.toUpperCase() !== 'DELETE') {
-                            return 'Please type DELETE to confirm';
-                        }
-                    },
-                    icon: 'warning',
-                    showCancelButton: true,
-                    confirmButtonColor: '#ff1493',
-                    cancelButtonColor: '#666',
-                    confirmButtonText: 'Yes, Delete Everything',
-                    cancelButtonText: 'Cancel',
-                    customClass: {
-                        popup: 'brain-auth-modal'
-                    }
-                });
-                
-                if (!finalConfirm.isConfirmed) {
-                    return;
-                }
-                
-                try {
-                    // First login to get session
-                    const loginResponse = await fetch('/api/auth/login', {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                        },
-                        credentials: 'include',
-                        body: JSON.stringify({ uid })
-                    });
-                    
-                    if (!loginResponse.ok) {
-                        throw new Error('Failed to authenticate');
-                    }
-                    
-                    // Now reset the data
-                    const response = await fetch('/api/reset-data', {
-                        method: 'POST',
-                        credentials: 'include',
-                        headers: {
-                            'Content-Type': 'application/json'
-                        }
-                    });
-                    
-                    if (response.ok) {
-                        // Clear client-side state (not HttpOnly session cookies)
-                        function cleanClientState() {
-                            try {
-                                // Clear local and session storage
-                                localStorage.clear();
-                                sessionStorage.clear();
-                                
-                                // Clear non-HttpOnly cookies (session cookie is cleared server-side)
-                                document.cookie.split(';').forEach(raw => {
-                                    const name = raw.split('=')[0].trim();
-                                    if (name) {
-                                        document.cookie = `${name}=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/`;
-                                    }
-                                });
-                            } catch (e) {
-                                console.warn('Client cleanup error:', e);
-                            }
-                        }
-                        
-                        // Clean up client state
-                        cleanClientState();
-                        
-                        await Swal.fire({
-                            title: 'Data Reset Complete',
-                            text: 'You can now login again to start fresh with a new encryption key.',
-                            icon: 'success',
-                            confirmButtonColor: '#00ffaa',
-                            customClass: {
-                                popup: 'brain-auth-modal'
-                            }
-                        });
-                        
-                        // Reload the page
-                        window.location.reload();
-                    } else {
-                        throw new Error('Reset failed');
-                    }
-                } catch (error) {
-                    console.error('Reset error:', error);
-                    Swal.fire({
-                        title: 'Reset Failed',
-                        text: 'Unable to reset data. Please try again or contact support.',
-                        icon: 'error',
-                        confirmButtonColor: '#ff1493',
-                        customClass: {
-                            popup: 'brain-auth-modal'
-                        }
-                    });
-                }
-            }
+        function getParams(name) {
+            const urlParams = new URLSearchParams(window.location.search);
+            return urlParams.get(name);
         }
-        
+
         async function handleLogin(event) {
             event.preventDefault();
             const uid = document.getElementById('uid').value.trim();
+            const loginForm = document.querySelector('.login-form');
+            const loginBtn = document.querySelector('.login-btn');
 
             try {
                 const response = await fetch('/api/auth/login', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded'
+                    },
                     credentials: 'include',
                     body: new URLSearchParams({ uid })
                 });
 
                 const data = await response.json();
-                if (!data.success) {
+
+                if (data.success) {
+                    localStorage.setItem('uid', uid);
+                    // Login successful, redirect to main app
+                    window.location.href = '/';
+                } else {
                     throw new Error(data.error || 'Login failed');
                 }
-
-                let key;
-                if (data.hasKey) {
-                    const stored = localStorage.getItem('brainKey') || (document.cookie.split('; ').find(r => r.startsWith('brainKey=')) || '').split('=')[1];
-                    // Try to auto-validate stored key first
-                    if (stored) {
-                        try {
-                            const res = await fetch('/api/code-check', { credentials: 'include' });
-                            const { cipher } = await res.json();
-                            if (cipher) {
-                                const plain = await decryptText(cipher, stored);
-                                if (plain === 'verify') {
-                                    // Stored key is valid, use it and skip the popup
-                                    key = stored;
-                                } else {
-                                    // Stored key is invalid, show popup
-                                    key = await showAuthPopup('');
-                                }
-                            } else {
-                                // No cipher to verify against, use stored key
-                                key = stored;
-                            }
-                        } catch (error) {
-                            // If validation fails, show popup
-                            key = await showAuthPopup(stored);
-                        }
-                    } else {
-                        // No stored key, show popup
-                        key = await showAuthPopup('');
-                    }
-                } else {
-                    key = localStorage.getItem('brainKey') || (document.cookie.split('; ').find(r => r.startsWith('brainKey=')) || '').split('=')[1];
-                    if (!key) {
-                        const array = new Uint8Array(32);
-                        crypto.getRandomValues(array);
-                        key = btoa(String.fromCharCode(...array));
-                    }
-                    localStorage.setItem('brainKey', key);
-                    document.cookie = `brainKey=${key}; max-age=315360000; path=/; SameSite=Strict`;
-                    const cipher = await encryptText('verify', key);
-                    await fetch('/api/code-check', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        credentials: 'include',
-                        body: JSON.stringify({ cipher })
-                    });
-                    await Swal.fire({
-                        title: '🔐 Your Brain Encryption Key',
-                        html: `
-                            <div class="code-container">
-                                <input id="brainCode" class="code-input" value="${key}" readonly>
-                                <button id="copyCode" type="button" class="copy-btn">
-                                    <span id="copyIcon">📋</span>
-                                    <span id="copyText">Copy</span>
-                                </button>
-                            </div>
-                            <div class="warning-text">
-                                <strong>⚠️ Important:</strong><br>
-                                • This key encrypts all your brain data<br>
-                                • Save it securely - you cannot recover it if lost<br>
-                                • You'll need this key to access your data on other devices
-                            </div>
-                        `,
-                        confirmButtonText: '✅ I\'ve Saved My Key',
-                        allowOutsideClick: false,
-                        customClass: {
-                            popup: 'brain-key-modal',
-                            htmlContainer: 'brain-key-content'
-                        },
-                        didOpen: () => {
-                            const copyBtn = document.getElementById('copyCode');
-                            const copyIcon = document.getElementById('copyIcon');
-                            const copyText = document.getElementById('copyText');
-                            const codeInput = document.getElementById('brainCode');
-
-                            // Auto-select the code for easy copying
-                            codeInput.focus();
-                            codeInput.select();
-
-                            copyBtn.addEventListener('click', async () => {
-                                try {
-                                    // Try modern clipboard API first
-                                    if (navigator.clipboard && window.isSecureContext) {
-                                        await navigator.clipboard.writeText(key);
-                                    } else {
-                                        // Fallback for older browsers or non-HTTPS
-                                        codeInput.select();
-                                        document.execCommand('copy');
-                                    }
-                                    
-                                    // Visual feedback
-                                    copyBtn.classList.add('copied');
-                                    copyIcon.textContent = '✅';
-                                    copyText.textContent = 'Copied!';
-                                    
-                                    // Reset after 2 seconds
-                                    setTimeout(() => {
-                                        copyBtn.classList.remove('copied');
-                                        copyIcon.textContent = '📋';
-                                        copyText.textContent = 'Copy';
-                                    }, 2000);
-                                    
-                                } catch (err) {
-                                    console.error('Copy failed:', err);
-                                    // Show manual copy instruction
-                                    copyIcon.textContent = '⚠️';
-                                    copyText.textContent = 'Select & Copy';
-                                    codeInput.select();
-                                }
-                            });
-                        }
-                    });
-                }
-
-                document.cookie = `brainKey=${key}; max-age=315360000; path=/; SameSite=Strict`;
-                localStorage.setItem('brainKey', key);
-                localStorage.setItem('uid', uid);
-                window.location.href = '/';
             } catch (error) {
-                await Swal.fire('Error', error.message, 'error');
+                const errorDiv = document.querySelector('.error-message') || document.createElement('div');
+                errorDiv.className = 'error-message';
+                errorDiv.textContent = error.message;
+                if (!document.querySelector('.error-message')) {
+                    loginForm.appendChild(errorDiv);
+                }
             }
+        }
+
+        // Check for error parameter in URL
+        const urlParams = new URLSearchParams(window.location.search);
+        const error = urlParams.get('error');
+        if (error) {
+            const errorDiv = document.createElement('div');
+            errorDiv.className = 'error-message';
+            errorDiv.textContent = decodeURIComponent(error);
+            document.querySelector('.login-form').appendChild(errorDiv);
         }
     </script>
     
