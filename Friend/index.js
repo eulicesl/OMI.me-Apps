@@ -1,6 +1,6 @@
 /*
- * Copyright (c) 2025 Neo (github.com/neooriginal)
- * All rights reserved.
+ * Friend App - OMI Companion
+ * Maintained by: Eulices Lopez
  */
 
 const express = require("express");
@@ -17,6 +17,14 @@ const { body, validationResult, query } = require('express-validator');
 
 const dotenv = require("dotenv");
 dotenv.config();
+
+// Production optimizations
+if (process.env.NODE_ENV === 'production') {
+  // Disable x-powered-by header for security
+  app.disable('x-powered-by');
+  // Trust proxy for proper IP detection behind reverse proxies
+  app.set('trust proxy', 1);
+}
 
 const openai = new OpenAI({
   apiKey: process.env.OPENROUTER_API_KEY || process.env.OPENAI_API_KEY,
@@ -49,6 +57,20 @@ const apiLimiter = rateLimit({
 });
 
 app.use(generalLimiter);
+
+// Security headers in production
+if (process.env.NODE_ENV === 'production') {
+  app.use(helmet({
+    contentSecurityPolicy: {
+      directives: {
+        defaultSrc: ["'self'"],
+        styleSrc: ["'self'", "'unsafe-inline'"],
+        scriptSrc: ["'self'", "'unsafe-inline'"],
+        imgSrc: ["'self'", "data:", "https:"],
+      },
+    },
+  }));
+}
 
 // Initialize Supabase client
 const supabase = createClient(
@@ -979,14 +1001,33 @@ app.get("/webhook/setup-status", (req, res) => {
   return res.status(200).json({ is_setup_completed: true });
 });
 
-// Basic health endpoint for monitoring
+// Basic health endpoint for monitoring (no rate limiting)
 app.get('/health', (_req, res) => {
   const supabaseConfigured = Boolean(process.env.SUPABASE_URL && process.env.SUPABASE_ANON_KEY);
   return res.status(200).json({ status: 'ok', supabaseConfigured });
 });
 
+// Test endpoint for production checks (no rate limiting in test mode)
+app.get('/test-ready', async (_req, res) => {
+  try {
+    // Quick db test
+    const testUid = 'health-check-' + Date.now();
+    await supabase.from('frienddb').upsert([{ uid: testUid }]);
+    await supabase.from('frienddb').delete().eq('uid', testUid);
+    
+    return res.status(200).json({ 
+      status: 'ok',
+      database: 'connected',
+      environment: process.env.NODE_ENV,
+      rateLimiting: 'configured'
+    });
+  } catch (error) {
+    return res.status(500).json({ status: 'error', message: error.message });
+  }
+});
+
 // Simple chat test endpoint used by dashboard persona chat
-app.post('/chat-test', [
+app.post('/chat-test', apiLimiter, [
   body('message').isString().isLength({ min: 1, max: 1000 }),
   body('personality').optional().isString().isLength({ max: 500 }),
   body('prompt').optional().isString().isLength({ max: 2000 }),
