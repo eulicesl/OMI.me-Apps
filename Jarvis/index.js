@@ -1,11 +1,7 @@
-/*
- * Copyright (c) 2025 Neo (github.com/neooriginal)
- * All rights reserved.
- */
-
 const express = require('express');
 const { createClient } = require('@supabase/supabase-js');
-require('dotenv').config({ path: '../.env' });
+const path = require('path');
+require('dotenv').config();
 const app = express();
 
 // Initialize Supabase client
@@ -17,36 +13,29 @@ const supabase = createClient(
 // Middleware to parse JSON bodies
 app.use(express.json());
 
-// Supabase table initialization
-(async () => {
-    try {
-        console.log('Setting up Jarvis app table...');
-        
-        const { error } = await supabase.rpc('exec_sql', {
-            sql_query: `
-                CREATE TABLE IF NOT EXISTS jarvis_sessions (
-                    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-                    session_id TEXT UNIQUE NOT NULL,
-                    user_name TEXT,
-                    user_facts TEXT,
-                    messages JSONB DEFAULT '[]',
-                    last_activity TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-                    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-                );
-            `
-        });
+// Serve static files (for CSS, JS if needed)
+app.use(express.static(path.join(__dirname)));
 
-        if (error) {
-            console.log("Table may already exist or exec_sql function not found.");
-            console.log("Please run the setup-supabase.sql script in your Supabase SQL editor.");
-        } else {
-            console.log("Jarvis app table created successfully!");
-        }
-    } catch (err) {
-        console.log("Auto-table creation failed. Please run setup-supabase.sql manually.");
-        console.log("Error:", err.message);
+// Serve the control panel HTML - auto-accepts UID like Brain app
+app.get('/', (req, res) => {
+    const uid = req.query.uid;
+    
+    // If UID is provided in URL, auto-accept it (like Brain app)
+    if (uid && typeof uid === 'string' && uid.length >= 3 && uid.length <= 50) {
+        // UID is valid, serve the control panel directly
+        // The HTML will handle the UID from URL params
+        return res.sendFile(path.join(__dirname, 'jarvis-control-panel.html'));
     }
-})();
+    
+    // No UID or invalid UID - serve the control panel anyway
+    // The HTML will redirect to request UID if needed
+    res.sendFile(path.join(__dirname, 'jarvis-control-panel.html'));
+});
+
+// Using existing tables:
+// - jarvis_sessions: For storing OMI webhook data (transcripts)
+// - frienddb.goals: For storing user actions/tasks (shared with Friend app)
+// Note: Run add-uid-column.sql to add uid column to jarvis_sessions
 
 class MessageBuffer {
     constructor() {
@@ -76,19 +65,13 @@ class MessageBuffer {
                 if (sessionData) {
                     this.buffers[sessionId] = {
                         messages: sessionData.messages || [],
-                        lastAnalysisTime: sessionData.last_activity || currentTime,
+                        lastAnalysisTime: new Date(sessionData.last_activity).getTime() / 1000 || currentTime,
                         lastActivity: currentTime,
                         wordsAfterSilence: 0,
                         silenceDetected: false,
                     };
-
-                    // Update last activity
-                    await supabase
-                        .from('jarvis_sessions')
-                        .update({ last_activity: new Date(currentTime * 1000).toISOString() })
-                        .eq('session_id', sessionId);
                 } else {
-                    // Create new session in database
+                    // Create new buffer
                     this.buffers[sessionId] = {
                         messages: [],
                         lastAnalysisTime: currentTime,
@@ -97,13 +80,14 @@ class MessageBuffer {
                         silenceDetected: false,
                     };
 
+                    // Create new session in jarvis_sessions
                     await supabase
                         .from('jarvis_sessions')
                         .upsert([{
                             session_id: sessionId,
                             messages: [],
                             last_activity: new Date(currentTime * 1000).toISOString()
-                        }]);
+                        }], { onConflict: 'session_id' });
                 }
             } catch (err) {
                 console.error("Error loading session from database:", err);
@@ -128,13 +112,7 @@ class MessageBuffer {
                 
                 // Update in database
                 try {
-                    await supabase
-                        .from('jarvis_sessions')
-                        .update({ 
-                            messages: [],
-                            last_activity: new Date(currentTime * 1000).toISOString() 
-                        })
-                        .eq('session_id', sessionId);
+                    // Friend app doesn't clear logs on silence, just continues
                 } catch (err) {
                     console.error("Error updating session after silence:", err);
                 }
@@ -170,16 +148,29 @@ class MessageBuffer {
         }
     }
 
-    async saveBuffer(sessionId) {
+    async saveBuffer(sessionId, uid) {
         if (this.buffers[sessionId]) {
             try {
+                // Save to jarvis_sessions
                 await supabase
                     .from('jarvis_sessions')
                     .update({
                         messages: this.buffers[sessionId].messages,
+                        uid: uid,  // Save UID for linking
                         last_activity: new Date(this.buffers[sessionId].lastActivity * 1000).toISOString()
                     })
                     .eq('session_id', sessionId);
+                    
+                // Also ensure user exists in frienddb for goals/actions
+                await supabase
+                    .from('frienddb')
+                    .upsert([{
+                        uid: uid || sessionId,
+                        goals: []
+                    }], { 
+                        onConflict: 'uid',
+                        ignoreDuplicates: true 
+                    });
             } catch (err) {
                 console.error("Error saving buffer to database:", err);
             }
@@ -235,6 +226,7 @@ function createNotificationPrompt(messages) {
 app.post('/webhook', async (req, res) => {
     const data = req.body;
     const sessionId = data.session_id;
+    const uid = data.uid || sessionId; // Use UID if provided, otherwise use session_id as UID (like Friend app)
     const segments = data.segments || [];
 
     if (!sessionId) {
@@ -301,20 +293,22 @@ app.post('/webhook', async (req, res) => {
             bufferData.lastAnalysisTime = currentTime;
             bufferData.messages = []; // Clear buffer after analysis
 
-            // Save buffer state to database
-            await messageBuffer.saveBuffer(sessionId);
+            // Save buffer state to database with UID
+            await messageBuffer.saveBuffer(sessionId, uid);
 
-            console.log(`Notification generated for session ${sessionId}`);
+            console.log(`Notification generated for session ${sessionId} (UID: ${uid})`);
             console.log(notification);
 
             return res.status(200).json(notification);
         } else {
             // Save buffer state even if no notification
-            await messageBuffer.saveBuffer(sessionId);
+            await messageBuffer.saveBuffer(sessionId, uid);
             return res.status(200).json({});
         }
     }
 
+    // Save current state with UID even if not time to analyze
+    await messageBuffer.saveBuffer(sessionId, uid);
     return res.status(202).json({});
 });
 
@@ -346,43 +340,222 @@ app.get('/status', async (req, res) => {
     }
 });
 
-// Analytics endpoint for Jarvis
-app.get('/analytics', async (req, res) => {
-    const sessionId = req.query.session_id;
+// API Endpoints for Frontend (following Friend/Brain pattern)
+
+// Get user's transcripts from jarvis_sessions
+app.get('/api/transcripts', async (req, res) => {
+    const uid = req.query.uid;
     
-    if (!sessionId) {
-        return res.status(400).json({ error: 'session_id is required' });
+    if (!uid) {
+        return res.status(400).json({ error: 'UID is required' });
     }
 
     try {
-        const { data: sessionData } = await supabase
+        const { data: sessions } = await supabase
             .from('jarvis_sessions')
             .select('*')
-            .eq('session_id', sessionId)
+            .eq('uid', uid)
+            .order('created_at', { ascending: false })
+            .limit(50);
+
+        // Format sessions as transcripts for the frontend
+        const transcripts = (sessions || []).map(session => ({
+            id: session.id,
+            text: session.messages?.map(m => m.text).join(' ') || '',
+            messages: session.messages || [],
+            created: session.created_at,
+            session_id: session.session_id
+        }));
+
+        res.json(transcripts);
+    } catch (err) {
+        console.error("Error fetching transcripts:", err);
+        res.status(500).json({ error: "Failed to fetch transcripts" });
+    }
+});
+
+// Get user's analytics from both jarvis_sessions and frienddb
+app.get('/api/analytics', async (req, res) => {
+    const uid = req.query.uid;
+    
+    if (!uid) {
+        return res.status(400).json({ error: 'UID is required' });
+    }
+
+    try {
+        // Get sessions from jarvis_sessions
+        const { data: sessions } = await supabase
+            .from('jarvis_sessions')
+            .select('*')
+            .eq('uid', uid)
+            .order('created_at', { ascending: false });
+
+        // Get goals from frienddb
+        const { data: userData } = await supabase
+            .from('frienddb')
+            .select('goals')
+            .eq('uid', uid)
             .single();
 
-        if (!sessionData) {
-            return res.status(404).json({ error: 'Session not found' });
-        }
-
-        const messages = sessionData.messages || [];
-        const totalMessages = messages.length;
-        const userMessages = messages.filter(msg => msg.is_user).length;
-        const systemMessages = totalMessages - userMessages;
+        const totalSessions = sessions?.length || 0;
+        const totalMessages = sessions?.reduce((sum, s) => sum + (s.messages?.length || 0), 0) || 0;
+        const lastActivity = sessions?.[0]?.last_activity;
 
         const analytics = {
-            session_id: sessionId,
+            uid: uid,
+            total_sessions: totalSessions,
             total_messages: totalMessages,
-            user_messages: userMessages,
-            system_messages: systemMessages,
-            last_activity: sessionData.last_activity,
-            created_at: sessionData.created_at
+            total_actions: userData?.goals?.length || 0,
+            last_activity: lastActivity,
+            recent_sessions: sessions?.slice(0, 10) || []
         };
 
         res.json(analytics);
     } catch (err) {
         console.error("Error getting analytics:", err);
         res.status(500).json({ error: "Failed to get analytics" });
+    }
+});
+
+// Save action to frienddb goals field (reusing Friend's structure)
+app.post('/api/actions', async (req, res) => {
+    const { uid, type, text, date } = req.body;
+    
+    if (!uid || !text) {
+        return res.status(400).json({ error: 'UID and text are required' });
+    }
+
+    try {
+        // Get existing goals from frienddb
+        const { data: userData } = await supabase
+            .from('frienddb')
+            .select('goals')
+            .eq('uid', uid)
+            .single();
+
+        const existingGoals = userData?.goals || [];
+        const newGoal = {
+            id: Date.now(),
+            type: type || 'task',
+            text: text,
+            date: date,
+            completed: false,
+            created_at: new Date().toISOString()
+        };
+
+        // Add new goal to array
+        const updatedGoals = [...existingGoals, newGoal];
+
+        // Update frienddb with new goals
+        const { error } = await supabase
+            .from('frienddb')
+            .update({ goals: updatedGoals })
+            .eq('uid', uid);
+
+        if (error) throw error;
+        res.json(newGoal);
+    } catch (err) {
+        console.error("Error saving action:", err);
+        res.status(500).json({ error: "Failed to save action" });
+    }
+});
+
+// Get user's actions from frienddb goals field
+app.get('/api/actions', async (req, res) => {
+    const uid = req.query.uid;
+    
+    if (!uid) {
+        return res.status(400).json({ error: 'UID is required' });
+    }
+
+    try {
+        const { data: userData } = await supabase
+            .from('frienddb')
+            .select('goals')
+            .eq('uid', uid)
+            .single();
+
+        const goals = userData?.goals || [];
+        // Sort by created_at descending
+        goals.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+        
+        res.json(goals);
+    } catch (err) {
+        console.error("Error fetching actions:", err);
+        res.json([]);
+    }
+});
+
+// Update action in frienddb goals
+app.put('/api/actions/:id', async (req, res) => {
+    const { id } = req.params;
+    const { uid, completed } = req.body;
+    
+    if (!uid || !id) {
+        return res.status(400).json({ error: 'UID and ID are required' });
+    }
+
+    try {
+        // Get existing goals
+        const { data: userData } = await supabase
+            .from('frienddb')
+            .select('goals')
+            .eq('uid', uid)
+            .single();
+
+        const goals = userData?.goals || [];
+        const goalIndex = goals.findIndex(g => g.id == id);
+        
+        if (goalIndex !== -1) {
+            goals[goalIndex].completed = completed;
+            goals[goalIndex].completed_at = completed ? new Date().toISOString() : null;
+            
+            // Update frienddb
+            await supabase
+                .from('frienddb')
+                .update({ goals: goals })
+                .eq('uid', uid);
+            
+            res.json(goals[goalIndex]);
+        } else {
+            res.status(404).json({ error: 'Action not found' });
+        }
+    } catch (err) {
+        console.error("Error updating action:", err);
+        res.status(500).json({ error: "Failed to update action" });
+    }
+});
+
+// Delete action from frienddb goals
+app.delete('/api/actions/:id', async (req, res) => {
+    const { id } = req.params;
+    const uid = req.query.uid;
+    
+    if (!uid || !id) {
+        return res.status(400).json({ error: 'UID and ID are required' });
+    }
+
+    try {
+        // Get existing goals
+        const { data: userData } = await supabase
+            .from('frienddb')
+            .select('goals')
+            .eq('uid', uid)
+            .single();
+
+        const goals = userData?.goals || [];
+        const filteredGoals = goals.filter(g => g.id != id);
+        
+        // Update frienddb
+        await supabase
+            .from('frienddb')
+            .update({ goals: filteredGoals })
+            .eq('uid', uid);
+
+        res.json({ success: true });
+    } catch (err) {
+        console.error("Error deleting action:", err);
+        res.status(500).json({ error: "Failed to delete action" });
     }
 });
 
