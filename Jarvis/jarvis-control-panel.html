@@ -1208,23 +1208,84 @@
 
         // Quick Access Functions
         function addTask() {
-            document.getElementById('captureType').value = 'task';
-            quickCapture();
+            if (!storage) {
+                showNotification('❌ Please reload the page with your UID');
+                return;
+            }
+            quickCaptureWithType('task');
         }
 
         function addReminder() {
-            document.getElementById('captureType').value = 'reminder';
-            quickCapture();
+            if (!storage) {
+                showNotification('❌ Please reload the page with your UID');
+                return;
+            }
+            quickCaptureWithType('reminder');
         }
 
         function addEvent() {
-            document.getElementById('captureType').value = 'event';
-            quickCapture();
+            if (!storage) {
+                showNotification('❌ Please reload the page with your UID');
+                return;
+            }
+            quickCaptureWithType('event');
         }
 
         function addNote() {
-            document.getElementById('captureType').value = 'note';
-            quickCapture();
+            if (!storage) {
+                showNotification('❌ Please reload the page with your UID');
+                return;
+            }
+            quickCaptureWithType('note');
+        }
+        
+        // Quick Capture with pre-selected type
+        function quickCaptureWithType(type) {
+            if (!storage) {
+                showNotification('❌ Please reload the page with your UID');
+                return;
+            }
+            showNotification('🗓️ QUICK CAPTURE MODE...');
+            
+            const content = `
+                <div class="input-group">
+                    <label class="input-label">ACTION TYPE</label>
+                    <select class="input-field" id="captureType">
+                        <option value="task" ${type === 'task' ? 'selected' : ''}>TASK</option>
+                        <option value="reminder" ${type === 'reminder' ? 'selected' : ''}>REMINDER</option>
+                        <option value="event" ${type === 'event' ? 'selected' : ''}>EVENT</option>
+                        <option value="note" ${type === 'note' ? 'selected' : ''}>NOTE</option>
+                    </select>
+                </div>
+                
+                <div class="input-group">
+                    <label class="input-label">DESCRIPTION</label>
+                    <textarea class="input-field" id="captureText" rows="4" placeholder="Enter ${type} details..." autofocus></textarea>
+                </div>
+                
+                <div class="input-group">
+                    <label class="input-label">DATE/TIME ${type === 'reminder' || type === 'event' ? '(REQUIRED)' : '(OPTIONAL)'}</label>
+                    <input type="datetime-local" class="input-field" id="captureDate">
+                </div>
+                
+                <div style="display: flex; gap: 10px; margin-top: 20px;">
+                    <button class="btn" style="flex: 1; padding: 15px;" onclick="saveCapture()">
+                        <span>SAVE ${type.toUpperCase()}</span>
+                    </button>
+                    <button class="btn" style="flex: 1; padding: 15px;" onclick="closeModal()">
+                        <span>CANCEL</span>
+                    </button>
+                </div>
+            `;
+            
+            openModal('QUICK CAPTURE - ' + type.toUpperCase(), content);
+            setTimeout(() => updateStatus('◉ SYSTEM ONLINE'), 2000);
+            
+            // Focus on text field after modal opens
+            setTimeout(() => {
+                const textField = document.getElementById('captureText');
+                if (textField) textField.focus();
+            }, 100);
         }
 
         // Helper Functions
