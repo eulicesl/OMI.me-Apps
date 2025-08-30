@@ -1191,6 +1191,11 @@
                     <small style="color: rgba(0, 212, 255, 0.5);">For spreadsheet applications</small>
                 </div>
                 
+                <div class="action-card" style="cursor: pointer;" onclick="downloadPlainText()">
+                    <div class="action-text">📝 DOWNLOAD AS TEXT</div>
+                    <small style="color: rgba(0, 212, 255, 0.5);">Plain text document with formatting</small>
+                </div>
+                
                 <div style="margin-top: 20px; padding: 15px; background: rgba(0, 30, 60, 0.5); border-radius: 10px;">
                     <h4 style="color: #00d4ff; margin-bottom: 10px;">SUMMARY STATS</h4>
                     <p style="color: rgba(0, 212, 255, 0.7);">Total Actions: ${actions.length}</p>
@@ -1489,6 +1494,107 @@ ${data.transcripts.slice(0, 5).map(t => `- ${t.text || 'No text'}`).join('\n')}
             ].join('\n');
             navigator.clipboard.writeText(csv);
             showNotification('📋 CSV COPIED');
+        }
+
+        async function downloadPlainText() {
+            // If export data hasn't been generated, generate it now
+            if (!window.jarvisExportData) {
+                showNotification('⚡ PREPARING EXPORT...');
+                const analytics = await storage.getAnalytics();
+                const actions = await storage.getActions();
+                const transcripts = await storage.getTranscripts();
+                
+                window.jarvisExportData = {
+                    generated: new Date().toISOString(),
+                    sessionId: 'JARVIS-' + Date.now().toString(36).toUpperCase(),
+                    analytics: analytics,
+                    actions: actions,
+                    transcripts: transcripts,
+                    summary: {
+                        totalActions: actions.length,
+                        pending: actions.filter(a => !a.completed).length,
+                        completed: actions.filter(a => a.completed).length,
+                        transcriptCount: transcripts.length
+                    }
+                };
+            }
+            
+            const data = window.jarvisExportData;
+            const separator = '═'.repeat(60);
+            const divider = '─'.repeat(60);
+            
+            // Create well-formatted plain text
+            const plainText = `${separator}
+                    J.A.R.V.I.S. EXPORT REPORT
+${separator}
+
+Generated: ${new Date(data.generated).toLocaleString()}
+Session ID: ${data.sessionId}
+User ID: ${UID}
+
+${divider}
+                    ANALYTICS SUMMARY
+${divider}
+
+Total Sessions:    ${data.analytics.sessions}
+Total Messages:    ${data.analytics.messages}
+Total Actions:     ${data.summary.totalActions}
+Pending Actions:   ${data.summary.pending}
+Completed Actions: ${data.summary.completed}
+Transcripts:       ${data.summary.transcriptCount}
+
+${divider}
+                    PENDING ACTIONS
+${divider}
+
+${data.actions.filter(a => !a.completed).length > 0 ?
+    data.actions.filter(a => !a.completed).map((action, i) => 
+        `${i + 1}. [${action.type.toUpperCase()}] ${action.text}
+   Created: ${new Date(action.created_at).toLocaleString()}
+   ${action.date ? 'Due: ' + new Date(action.date).toLocaleString() : 'No due date'}
+`).join('\n') : 'No pending actions'}
+
+${divider}
+                    COMPLETED ACTIONS
+${divider}
+
+${data.actions.filter(a => a.completed).length > 0 ?
+    data.actions.filter(a => a.completed).map((action, i) => 
+        `${i + 1}. [${action.type.toUpperCase()}] ${action.text}
+   Created: ${new Date(action.created_at).toLocaleString()}
+   Completed: ${action.completed_at ? new Date(action.completed_at).toLocaleString() : 'N/A'}
+`).join('\n') : 'No completed actions'}
+
+${divider}
+                    RECENT TRANSCRIPTS
+${divider}
+
+${data.transcripts.length > 0 ?
+    data.transcripts.slice(0, 5).map((transcript, i) => 
+        `Session ${i + 1}: ${transcript.session_id}
+Date: ${new Date(transcript.created).toLocaleString()}
+Content: ${transcript.text || 'No transcript available'}
+${divider}
+`).join('\n') : 'No transcripts available'}
+
+${separator}
+                    END OF REPORT
+${separator}
+`;
+            
+            // Create and download the file
+            const blob = new Blob([plainText], { type: 'text/plain;charset=utf-8' });
+            const url = window.URL.createObjectURL(blob);
+            const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+            const filename = `JARVIS_Report_${timestamp}.txt`;
+            
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = filename;
+            a.click();
+            
+            window.URL.revokeObjectURL(url);
+            showNotification('📝 TEXT DOCUMENT DOWNLOADED');
         }
 
         // Keyboard shortcuts
