@@ -710,40 +710,8 @@
     </div>
 
     <script>
-        // Get UID from URL parameter (like Friend and Brain apps)
-        const urlParams = new URLSearchParams(window.location.search);
-        let UID = urlParams.get('uid');
-        
-        // If no UID, check localStorage (Brain app pattern)
-        if (!UID) {
-            UID = localStorage.getItem('jarvis_uid');
-        }
-        
-        // If still no UID, prompt for one
-        if (!UID) {
-            UID = prompt('Enter your OMI UID to access J.A.R.V.I.S.:');
-            if (!UID || UID.length < 3) {
-                alert('Valid UID required to access the system.');
-                window.location.href = '/';
-                throw new Error('No UID provided');
-            }
-            // Save for next time
-            localStorage.setItem('jarvis_uid', UID);
-            // Redirect with UID in URL
-            window.location.href = `/?uid=${UID}`;
-        } else {
-            // Save UID for future visits
-            localStorage.setItem('jarvis_uid', UID);
-            // Initialize storage with UID
-            initializeStorage();
-            // Clean URL (remove UID parameter) like Brain app
-            if (window.location.search.includes('uid=')) {
-                const cleanUrl = window.location.pathname;
-                window.history.replaceState({}, document.title, cleanUrl);
-            }
-        }
-
         // Backend API Manager (replaces localStorage with Supabase)
+        // MUST BE DEFINED FIRST before any usage
         class JarvisAPI {
             constructor(uid) {
                 this.uid = uid;
@@ -852,12 +820,46 @@
         }
 
         let storage = null; // Initialize later after UID is confirmed
+        let UID = null; // Declare UID at the top level
         
         // Function to initialize storage after UID is set
         function initializeStorage() {
             if (UID) {
                 storage = new JarvisAPI(UID);
                 console.log('Storage initialized with UID:', UID);
+            }
+        }
+
+        // Get UID from URL parameter (like Friend and Brain apps)
+        const urlParams = new URLSearchParams(window.location.search);
+        UID = urlParams.get('uid');
+        
+        // If no UID, check localStorage (Brain app pattern)
+        if (!UID) {
+            UID = localStorage.getItem('jarvis_uid');
+        }
+        
+        // If still no UID, prompt for one
+        if (!UID) {
+            UID = prompt('Enter your OMI UID to access J.A.R.V.I.S.:');
+            if (!UID || UID.length < 3) {
+                alert('Valid UID required to access the system.');
+                window.location.href = '/';
+                throw new Error('No UID provided');
+            }
+            // Save for next time
+            localStorage.setItem('jarvis_uid', UID);
+            // Redirect with UID in URL
+            window.location.href = `/?uid=${UID}`;
+        } else {
+            // Save UID for future visits
+            localStorage.setItem('jarvis_uid', UID);
+            // Initialize storage with UID - NOW SAFE because JarvisAPI is defined
+            initializeStorage();
+            // Clean URL (remove UID parameter) like Brain app
+            if (window.location.search.includes('uid=')) {
+                const cleanUrl = window.location.pathname;
+                window.history.replaceState({}, document.title, cleanUrl);
             }
         }
 
