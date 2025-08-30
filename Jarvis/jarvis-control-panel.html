@@ -734,6 +734,8 @@
         } else {
             // Save UID for future visits
             localStorage.setItem('jarvis_uid', UID);
+            // Initialize storage with UID
+            initializeStorage();
             // Clean URL (remove UID parameter) like Brain app
             if (window.location.search.includes('uid=')) {
                 const cleanUrl = window.location.pathname;
@@ -849,7 +851,15 @@
             }
         }
 
-        const storage = new JarvisAPI(UID);
+        let storage = null; // Initialize later after UID is confirmed
+        
+        // Function to initialize storage after UID is set
+        function initializeStorage() {
+            if (UID) {
+                storage = new JarvisAPI(UID);
+                console.log('Storage initialized with UID:', UID);
+            }
+        }
 
         // Generate particles (reduced for performance)
         function createParticles() {
@@ -912,6 +922,10 @@
 
         // Main Functions - Now work with backend
         async function showDailyBriefing() {
+            if (!storage) {
+                showNotification('❌ Please reload the page with your UID');
+                return;
+            }
             showNotification('⚡ GENERATING DAILY BRIEFING...');
             updateStatus('◉ FETCHING DATA FROM SERVER', true);
             
@@ -966,6 +980,10 @@
         }
 
         async function reviewTranscripts() {
+            if (!storage) {
+                showNotification('❌ Please reload the page with your UID');
+                return;
+            }
             showNotification('🎙️ LOADING TRANSCRIPTS...');
             updateStatus('◉ ACCESSING LOCAL STORAGE', true);
             
@@ -993,6 +1011,10 @@
         }
 
         async function showPendingActions() {
+            if (!storage) {
+                showNotification('❌ Please reload the page with your UID');
+                return;
+            }
             showNotification('📡 LOADING PENDING ACTIONS...');
             updateStatus('◉ SCANNING ACTION QUEUE', true);
             
@@ -1022,6 +1044,10 @@
         }
 
         function quickCapture() {
+            if (!storage) {
+                showNotification('❌ Please reload the page with your UID');
+                return;
+            }
             showNotification('🗓️ QUICK CAPTURE MODE...');
             
             const content = `
@@ -1059,6 +1085,10 @@
         }
 
         async function viewAnalytics() {
+            if (!storage) {
+                showNotification('❌ Please reload the page with your UID');
+                return;
+            }
             showNotification('⚙️ GENERATING ANALYTICS...');
             updateStatus('◉ PROCESSING DATA', true);
             
@@ -1120,6 +1150,10 @@
         }
 
         async function exportSummary() {
+            if (!storage) {
+                showNotification('❌ Please reload the page with your UID');
+                return;
+            }
             showNotification('📊 EXPORTING DATA...');
             updateStatus('◉ GENERATING EXPORT', true);
             
@@ -1271,6 +1305,19 @@
         function copyToClipboard(text) {
             navigator.clipboard.writeText(text);
             showNotification('📋 COPIED TO CLIPBOARD');
+        }
+
+        function downloadTranscript(sessionId, text) {
+            const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+            const filename = `transcript-${sessionId}-${timestamp}.txt`;
+            const blob = new Blob([text || 'No transcript available'], { type: 'text/plain' });
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = filename;
+            a.click();
+            window.URL.revokeObjectURL(url);
+            showNotification('📥 TRANSCRIPT DOWNLOADED');
         }
 
         function downloadJSON() {
