@@ -559,6 +559,74 @@ app.delete('/api/actions/:id', async (req, res) => {
     }
 });
 
+// Preferences helpers for salutation persistence
+async function getSalutationForUid(uid) {
+    try {
+        const { data } = await supabase
+            .from('frienddb')
+            .select('analytics')
+            .eq('uid', uid)
+            .single();
+        // JARVIS persona - default to "Sir" if no preference set
+        return data?.analytics?.salutation || 'sir';
+    } catch (err) {
+        console.error("Error getting salutation:", err);
+        return 'sir'; // JARVIS default
+    }
+}
+
+async function setSalutationForUid(uid, salutation) {
+    try {
+        const s = String(salutation || '').toLowerCase();
+        const { data } = await supabase
+            .from('frienddb')
+            .select('analytics')
+            .eq('uid', uid)
+            .single();
+        
+        const analytics = { ...(data?.analytics || {}), salutation: s };
+        
+        await supabase
+            .from('frienddb')
+            .upsert({ uid, analytics }, { onConflict: 'uid' });
+        
+        return s;
+    } catch (err) {
+        console.error("Error setting salutation:", err);
+        return null;
+    }
+}
+
+// GET /api/preferences?uid=...
+app.get('/api/preferences', async (req, res) => {
+    try {
+        const uid = req.query.uid;
+        if (!uid) {
+            return res.status(400).json({ error: 'UID is required' });
+        }
+        const salutation = await getSalutationForUid(uid);
+        res.json({ salutation });
+    } catch (err) {
+        console.error("Error in GET preferences:", err);
+        res.status(500).json({ error: 'Failed to load preferences' });
+    }
+});
+
+// POST /api/preferences { uid, salutation }
+app.post('/api/preferences', async (req, res) => {
+    try {
+        const { uid, salutation } = req.body || {};
+        if (!uid || !salutation) {
+            return res.status(400).json({ error: 'UID and salutation are required' });
+        }
+        const saved = await setSalutationForUid(uid, salutation);
+        res.json({ salutation: saved });
+    } catch (err) {
+        console.error("Error in POST preferences:", err);
+        res.status(500).json({ error: 'Failed to save preferences' });
+    }
+});
+
 // Start the server
 const port = process.env.PORT || 3000;
 app.listen(port, '0.0.0.0', () => {

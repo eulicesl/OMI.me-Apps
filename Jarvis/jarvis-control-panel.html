@@ -817,6 +817,32 @@
                     };
                 }
             }
+            
+            async getPreferenceSalutation() {
+                try {
+                    const r = await fetch(`${this.baseUrl}/api/preferences?uid=${this.uid}`);
+                    if (!r.ok) return null;
+                    const j = await r.json();
+                    return j.salutation || null;
+                } catch (err) {
+                    console.error('Error getting preference salutation:', err);
+                    return null;
+                }
+            }
+
+            async setPreferenceSalutation(value) {
+                try {
+                    const r = await fetch(`${this.baseUrl}/api/preferences`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ uid: this.uid, salutation: value })
+                    });
+                    return r.ok;
+                } catch (err) {
+                    console.error('Error setting preference salutation:', err);
+                    return false;
+                }
+            }
         }
 
         let storage = null; // Initialize later after UID is confirmed
@@ -860,6 +886,77 @@
             if (window.location.search.includes('uid=')) {
                 const cleanUrl = window.location.pathname;
                 window.history.replaceState({}, document.title, cleanUrl);
+            }
+            // Bootstrap salutation preference after storage is initialized
+            (async () => { await bootstrapSalutation(); })();
+        }
+        
+        // Salutation preference functions
+        function getSalutation() {
+            // JARVIS persona - default to "sir" if nothing set
+            return (localStorage.getItem('jarvis_salutation') || 'sir').toLowerCase();
+        }
+
+        async function bootstrapSalutation() {
+            if (!storage) return; // Safety check
+            
+            try {
+                // 1) Server source of truth
+                const serverVal = await storage.getPreferenceSalutation();
+                if (serverVal) {
+                    localStorage.setItem('jarvis_salutation', serverVal);
+                    console.log('Salutation loaded from server:', serverVal);
+                    return;
+                }
+                
+                // 2) Existing local value → save to server
+                const localVal = localStorage.getItem('jarvis_salutation');
+                if (localVal) {
+                    await storage.setPreferenceSalutation(localVal);
+                    console.log('Local salutation saved to server:', localVal);
+                    return;
+                }
+                
+                // 3) First-time: ask once, then persist everywhere
+                // JARVIS persona appropriate options
+                let first = prompt(
+                    'Good day. How shall I address you?\n\n' +
+                    'Common preferences:\n' +
+                    '• Sir (default)\n' +
+                    '• Ma\'am\n' +
+                    '• Captain\n' +
+                    '• Boss\n' +
+                    '• Commander\n\n' +
+                    'Please enter your preference:'
+                );
+                
+                // Default to "sir" if no input or cancelled
+                first = (first || 'sir').trim().toLowerCase();
+                
+                // Validate and normalize common variations
+                const normalized = {
+                    'madam': 'ma\'am',
+                    'maam': 'ma\'am',
+                    'ma am': 'ma\'am',
+                    'miss': 'ma\'am',
+                    'ms': 'ma\'am',
+                    'mrs': 'ma\'am',
+                    'cap': 'captain',
+                    'chief': 'boss',
+                    'cmd': 'commander',
+                    'cmdr': 'commander'
+                };
+                
+                first = normalized[first] || first;
+                localStorage.setItem('jarvis_salutation', first);
+                await storage.setPreferenceSalutation(first);
+                console.log('New salutation set:', first);
+            } catch (err) {
+                console.error('Error bootstrapping salutation:', err);
+                // Fallback to local storage only - JARVIS default
+                if (!localStorage.getItem('jarvis_salutation')) {
+                    localStorage.setItem('jarvis_salutation', 'sir');
+                }
             }
         }
 
@@ -935,10 +1032,11 @@
             const actions = await storage.getActions();
             const hour = new Date().getHours();
             const greeting = hour < 12 ? 'GOOD MORNING' : hour < 17 ? 'GOOD AFTERNOON' : 'GOOD EVENING';
+            const salutation = getSalutation().toUpperCase();
             
             const content = `
                 <div style="text-align: center; margin-bottom: 20px;">
-                    <h3 style="color: #00ff88;">${greeting}, SIR</h3>
+                    <h3 style="color: #00ff88;">${greeting}, ${salutation}</h3>
                     <p style="color: rgba(0, 212, 255, 0.7);">${new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</p>
                 </div>
                 
@@ -1389,6 +1487,10 @@
         }
 
         async function downloadJSON() {
+            if (!storage) {
+                showNotification('❌ Please reload the page with your UID');
+                return;
+            }
             // If export data hasn't been generated, generate it now
             if (!window.jarvisExportData) {
                 showNotification('⚡ PREPARING EXPORT...');
@@ -1497,6 +1599,10 @@ ${data.transcripts.slice(0, 5).map(t => `- ${t.text || 'No text'}`).join('\n')}
         }
 
         async function downloadPlainText() {
+            if (!storage) {
+                showNotification('❌ Please reload the page with your UID');
+                return;
+            }
             // If export data hasn't been generated, generate it now
             if (!window.jarvisExportData) {
                 showNotification('⚡ PREPARING EXPORT...');
@@ -1520,6 +1626,17 @@ ${data.transcripts.slice(0, 5).map(t => `- ${t.text || 'No text'}`).join('\n')}
             }
             
             const data = window.jarvisExportData;
+            
+            // Ensure summary exists with safe defaults
+            if (!data.summary) {
+                data.summary = {
+                    totalActions: data.actions?.length || 0,
+                    pending: data.actions?.filter(a => !a.completed).length || 0,
+                    completed: data.actions?.filter(a => a.completed).length || 0,
+                    transcriptCount: data.transcripts?.length || 0
+                };
+            }
+            
             const separator = '═'.repeat(60);
             const divider = '─'.repeat(60);
             
@@ -1536,21 +1653,21 @@ ${divider}
                     ANALYTICS SUMMARY
 ${divider}
 
-Total Sessions:    ${data.analytics.sessions}
-Total Messages:    ${data.analytics.messages}
-Total Actions:     ${data.summary.totalActions}
-Pending Actions:   ${data.summary.pending}
-Completed Actions: ${data.summary.completed}
-Transcripts:       ${data.summary.transcriptCount}
+Total Sessions:    ${data.analytics?.sessions || 0}
+Total Messages:    ${data.analytics?.messages || 0}
+Total Actions:     ${data.summary?.totalActions || 0}
+Pending Actions:   ${data.summary?.pending || 0}
+Completed Actions: ${data.summary?.completed || 0}
+Transcripts:       ${data.summary?.transcriptCount || 0}
 
 ${divider}
                     PENDING ACTIONS
 ${divider}
 
-${data.actions.filter(a => !a.completed).length > 0 ?
+${data.actions?.filter(a => !a.completed).length > 0 ?
     data.actions.filter(a => !a.completed).map((action, i) => 
-        `${i + 1}. [${action.type.toUpperCase()}] ${action.text}
-   Created: ${new Date(action.created_at).toLocaleString()}
+        `${i + 1}. [${(action.type || 'task').toUpperCase()}] ${action.text}
+   Created: ${new Date(action.created_at || action.created || Date.now()).toLocaleString()}
    ${action.date ? 'Due: ' + new Date(action.date).toLocaleString() : 'No due date'}
 `).join('\n') : 'No pending actions'}
 
@@ -1558,10 +1675,10 @@ ${divider}
                     COMPLETED ACTIONS
 ${divider}
 
-${data.actions.filter(a => a.completed).length > 0 ?
+${data.actions?.filter(a => a.completed).length > 0 ?
     data.actions.filter(a => a.completed).map((action, i) => 
-        `${i + 1}. [${action.type.toUpperCase()}] ${action.text}
-   Created: ${new Date(action.created_at).toLocaleString()}
+        `${i + 1}. [${(action.type || 'task').toUpperCase()}] ${action.text}
+   Created: ${new Date(action.created_at || action.created || Date.now()).toLocaleString()}
    Completed: ${action.completed_at ? new Date(action.completed_at).toLocaleString() : 'N/A'}
 `).join('\n') : 'No completed actions'}
 
@@ -1569,7 +1686,7 @@ ${divider}
                     RECENT TRANSCRIPTS
 ${divider}
 
-${data.transcripts.length > 0 ?
+${data.transcripts?.length > 0 ?
     data.transcripts.slice(0, 5).map((transcript, i) => 
         `Session ${i + 1}: ${transcript.session_id}
 Date: ${new Date(transcript.created).toLocaleString()}
@@ -1638,6 +1755,7 @@ ${separator}
         setTimeout(() => {
             const hour = new Date().getHours();
             const greeting = hour < 12 ? 'GOOD MORNING' : hour < 17 ? 'GOOD AFTERNOON' : 'GOOD EVENING';
+            const salutation = getSalutation().toUpperCase();
             showNotification(`${greeting}, SIR. JARVIS IS READY.`);
         }, 1000);
     </script>
