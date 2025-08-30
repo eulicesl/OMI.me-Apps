@@ -1383,7 +1383,29 @@
             showNotification('📥 TRANSCRIPT DOWNLOADED');
         }
 
-        function downloadJSON() {
+        async function downloadJSON() {
+            // If export data hasn't been generated, generate it now
+            if (!window.jarvisExportData) {
+                showNotification('⚡ PREPARING EXPORT...');
+                const analytics = await storage.getAnalytics();
+                const actions = await storage.getActions();
+                const transcripts = await storage.getTranscripts();
+                
+                window.jarvisExportData = {
+                    generated: new Date().toISOString(),
+                    sessionId: 'JARVIS-' + Date.now().toString(36).toUpperCase(),
+                    analytics: analytics,
+                    actions: actions,
+                    transcripts: transcripts,
+                    summary: {
+                        totalActions: actions.length,
+                        pending: actions.filter(a => !a.completed).length,
+                        completed: actions.filter(a => a.completed).length,
+                        transcriptCount: transcripts.length
+                    }
+                };
+            }
+            
             const dataStr = JSON.stringify(window.jarvisExportData, null, 2);
             const dataUri = 'data:application/json;charset=utf-8,'+ encodeURIComponent(dataStr);
             const exportFileDefaultName = `jarvis-export-${Date.now()}.json`;
@@ -1395,7 +1417,28 @@
             showNotification('📥 DOWNLOAD STARTED');
         }
 
-        function copyMarkdown() {
+        async function copyMarkdown() {
+            // If export data hasn't been generated, generate it now
+            if (!window.jarvisExportData) {
+                showNotification('⚡ PREPARING EXPORT...');
+                const analytics = await storage.getAnalytics();
+                const actions = await storage.getActions();
+                const transcripts = await storage.getTranscripts();
+                
+                window.jarvisExportData = {
+                    generated: new Date().toISOString(),
+                    sessionId: 'JARVIS-' + Date.now().toString(36).toUpperCase(),
+                    analytics: analytics,
+                    actions: actions,
+                    transcripts: transcripts,
+                    summary: {
+                        totalActions: actions.length,
+                        pending: actions.filter(a => !a.completed).length,
+                        completed: actions.filter(a => a.completed).length,
+                        transcriptCount: transcripts.length
+                    }
+                };
+            }
             const data = window.jarvisExportData;
             const markdown = `# JARVIS Export Summary
             
@@ -1417,7 +1460,28 @@ ${data.transcripts.slice(0, 5).map(t => `- ${t.text || 'No text'}`).join('\n')}
             showNotification('📋 MARKDOWN COPIED');
         }
 
-        function copyCSV() {
+        async function copyCSV() {
+            // If export data hasn't been generated, generate it now
+            if (!window.jarvisExportData) {
+                showNotification('⚡ PREPARING EXPORT...');
+                const analytics = await storage.getAnalytics();
+                const actions = await storage.getActions();
+                const transcripts = await storage.getTranscripts();
+                
+                window.jarvisExportData = {
+                    generated: new Date().toISOString(),
+                    sessionId: 'JARVIS-' + Date.now().toString(36).toUpperCase(),
+                    analytics: analytics,
+                    actions: actions,
+                    transcripts: transcripts,
+                    summary: {
+                        totalActions: actions.length,
+                        pending: actions.filter(a => !a.completed).length,
+                        completed: actions.filter(a => a.completed).length,
+                        transcriptCount: transcripts.length
+                    }
+                };
+            }
             const data = window.jarvisExportData;
             const csv = [
                 'Type,Text,Created,Completed',
