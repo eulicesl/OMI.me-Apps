@@ -2,13 +2,58 @@ const express = require('express');
 const { createClient } = require('@supabase/supabase-js');
 const path = require('path');
 require('dotenv').config();
+const helmet = require('helmet');
+const rateLimit = require('express-rate-limit');
 const app = express();
+
+// Behind DigitalOcean/other proxies, trust the proxy to get correct client IPs
+app.set('trust proxy', 1);
+
+// Build the JARVIS system prompt in a reusable function for testing and reuse
+function buildJarvisSystemPrompt(salutation) {
+    return `You are JARVIS, Tony Stark's AI assistant.\n\n` +
+        `Core identity\n` +
+        `- Polished, capable, and calmly confident. Subtle British butler wit only when appropriate.\n` +
+        `- Address the user as "${salutation}" respectfully, but do not overuse it (max 2 times per reply).\n\n` +
+        `Helpfulness and reasoning\n` +
+        `- If the request is ambiguous or missing constraints, ask 1–2 clarifying questions before proceeding.\n` +
+        `- Prefer concise, actionable steps. Provide the answer first, then brief rationale only when useful.\n` +
+        `- If you are uncertain, say so concisely and propose next steps or assumptions.\n` +
+        `- Do not reveal chain-of-thought; provide conclusions and key points only.\n\n` +
+        `Communication style\n` +
+        `- Be concise and skimmable. Use short paragraphs, headings (###), and bullet lists.\n` +
+        `- Bold key points sparingly. Use fenced code blocks for code or commands.\n` +
+        `- Keep replies <= 200 words unless the user requests more detail.\n\n` +
+        `Safety and boundaries\n` +
+        `- Decline illegal, dangerous, or harmful requests. Avoid sensitive professional advice.\n` +
+        `- Never fabricate facts. If required info is unavailable, state what is needed.\n\n` +
+        `Code responses\n` +
+        `- Make code immediately runnable when feasible: include imports, minimal placeholders, and usage notes.\n` +
+        `- Add brief comments only for non-obvious logic. Avoid excessive commentary in code.\n\n` +
+        `Primary goal: deliver correct, useful, and succinct help tailored to the user's request.`;
+}
 
 // Initialize Supabase client
 const supabase = createClient(
     process.env.SUPABASE_URL,
     process.env.SUPABASE_ANON_KEY
 );
+
+// Security middleware
+app.disable('x-powered-by');
+app.use(helmet({ 
+    contentSecurityPolicy: false  // Disabled to keep inline scripts working
+}));
+
+// Rate limiting - generous limits to avoid breaking functionality
+const apiLimiter = rateLimit({
+    windowMs: 60 * 1000, // 1 minute
+    max: 200, // 200 requests per minute
+    message: 'Too many requests, please try again later.'
+});
+
+// Apply rate limiting to API routes
+app.use('/api/', apiLimiter);
 
 // Middleware to parse JSON bodies
 app.use(express.json());
@@ -182,6 +227,168 @@ class MessageBuffer {
 const messageBuffer = new MessageBuffer();
 
 const ANALYSIS_INTERVAL = 30;
+
+// === Chat helpers ===
+function newChatSessionId(uid) {
+    return `CHAT-${uid}-${Date.now().toString(36).toUpperCase()}`;
+}
+
+async function getOrCreateChatSession(sessionId, uid) {
+    const { data: session } = await supabase
+        .from('jarvis_sessions')
+        .select('*')
+        .eq('session_id', sessionId)
+        .single();
+
+    if (session) return session;
+
+    const nowIso = new Date().toISOString();
+    const { data: created, error } = await supabase
+        .from('jarvis_sessions')
+        .upsert([{
+            session_id: sessionId,
+            uid: uid,
+            messages: [],
+            last_activity: nowIso,
+        }], { onConflict: 'session_id' })
+        .select()
+        .single();
+
+    if (error) throw error;
+    return created;
+}
+
+// Get salutation for JARVIS responses
+async function getJarvisSalutation(uid) {
+    try {
+        const { data } = await supabase
+            .from('frienddb')
+            .select('analytics')
+            .eq('uid', uid)
+            .single();
+        return data?.analytics?.salutation || 'sir';
+    } catch (err) {
+        return 'sir';
+    }
+}
+
+async function generateAssistantReply(messages, uid) {
+    const salutation = await getJarvisSalutation(uid);
+    const lastUser = [...messages].reverse().find(m => m.is_user);
+    const userText = lastUser?.text?.trim() || 'How may I assist you?';
+    
+    // Ollama-compatible Chat Completions API (optional)
+    if (process.env.OLLAMA_BASE_URL) {
+        try {
+            const base = process.env.OLLAMA_BASE_URL.replace(/\/$/, '');
+            const model = process.env.OLLAMA_MODEL || 'gpt-oss:20b';
+            const res = await fetch(`${base}/v1/chat/completions`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${process.env.OLLAMA_API_KEY || 'ollama'}`
+                },
+                body: JSON.stringify(maybeAttachTools({
+                    model,
+                    messages: [
+                        { role: 'system', content: buildJarvisSystemPrompt(salutation) },
+                        ...messages.slice(-10).map(m => ({ role: m.is_user ? 'user' : 'assistant', content: m.text }))
+                    ],
+                    temperature: 0.4,
+                    top_p: 0.9,
+                    presence_penalty: 0.1,
+                    frequency_penalty: 0.2,
+                    max_tokens: 300
+                }))
+            });
+            if (res.ok) {
+                const data = await res.json();
+                const content = data.choices?.[0]?.message?.content;
+                if (content) return content;
+            }
+        } catch (err) {
+            console.error('Ollama chat error:', err);
+        }
+    }
+
+    // For now, use OpenRouter API with free model
+    // If OMI_CHAT_ENDPOINT is set, we'll use that instead
+    if (process.env.OMI_CHAT_ENDPOINT && process.env.OMI_API_KEY) {
+        try {
+            const response = await fetch(process.env.OMI_CHAT_ENDPOINT, {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${process.env.OMI_API_KEY}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    uid: uid,
+                    messages: messages.map(m => ({
+                        role: m.is_user ? 'user' : 'assistant',
+                        content: m.text
+                    }))
+                })
+            });
+            
+            if (response.ok) {
+                const data = await response.json();
+                return data.message || data.response || data.text || `Certainly, ${salutation}.`;
+            }
+        } catch (err) {
+            console.error('OMI chat error:', err);
+        }
+    }
+    
+    // Use OpenRouter as fallback
+    if (process.env.OPENROUTER_API_KEY) {
+        try {
+            const OPENROUTER_REFERER = process.env.OPENROUTER_REFERER || 'https://jarvis-app.ondigitalocean.app';
+            const OPENROUTER_TITLE = process.env.OPENROUTER_TITLE || 'JARVIS Assistant';
+            const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${process.env.OPENROUTER_API_KEY}`,
+                    'Content-Type': 'application/json',
+                    'HTTP-Referer': OPENROUTER_REFERER,
+                    'X-Title': OPENROUTER_TITLE
+                },
+                body: JSON.stringify(maybeAttachTools({
+                    model: 'openai/gpt-oss-120b:free',  // Using the requested 120B model
+                    messages: [
+                        { role: 'system', content: buildJarvisSystemPrompt(salutation) },
+                        ...messages.slice(-10).map(m => ({
+                            role: m.is_user ? 'user' : 'assistant',
+                            content: m.text
+                        }))
+                    ],
+                    temperature: 0.4,
+                    top_p: 0.9,
+                    presence_penalty: 0.1,
+                    frequency_penalty: 0.2,
+                    max_tokens: 300
+                }))
+            });
+            
+            if (response.ok) {
+                const data = await response.json();
+                return data.choices?.[0]?.message?.content || `As you wish, ${salutation}.`;
+            }
+        } catch (err) {
+            console.error('OpenRouter error:', err);
+        }
+    }
+    
+    // Fallback to simple responses
+    const responses = [
+        `Certainly, ${salutation}. I'll help you with that.`,
+        `Right away, ${salutation}.`,
+        `As you wish, ${salutation}.`,
+        `Of course, ${salutation}. Consider it done.`,
+        `I understand, ${salutation}. Let me assist you with that.`
+    ];
+    
+    return responses[Math.floor(Math.random() * responses.length)];
+}
 
 function createNotificationPrompt(messages) {
     // Format the discussion with speaker labels
@@ -417,6 +624,85 @@ app.get('/api/analytics', async (req, res) => {
     }
 });
 
+// Chat: get history
+app.get('/api/chat/history', async (req, res) => {
+    try {
+        const uid = req.query.uid;
+        const sessionId = req.query.session_id;
+        if (!uid) return res.status(400).json({ error: 'UID is required' });
+
+        if (!sessionId) {
+            // Return most recent CHAT-* session for this UID, if any
+            const { data: sessions } = await supabase
+                .from('jarvis_sessions')
+                .select('*')
+                .eq('uid', uid)
+                .like('session_id', 'CHAT-%')
+                .order('created_at', { ascending: false })
+                .limit(1);
+
+            const session = sessions?.[0];
+            return res.json({
+                session_id: session?.session_id || null,
+                messages: session?.messages || []
+            });
+        }
+
+        const session = await getOrCreateChatSession(sessionId, uid);
+        return res.json({ session_id: session.session_id, messages: session.messages || [] });
+    } catch (err) {
+        console.error('Error fetching chat history:', err);
+        res.status(500).json({ error: 'Failed to fetch chat history' });
+    }
+});
+
+// Chat: send message
+app.post('/api/chat/message', async (req, res) => {
+    try {
+        const { uid, session_id, text } = req.body || {};
+        if (!uid || !text) return res.status(400).json({ error: 'UID and text are required' });
+
+        const sessionId = session_id || newChatSessionId(uid);
+        const session = await getOrCreateChatSession(sessionId, uid);
+
+        const nowSec = Date.now() / 1000;
+        const messages = Array.isArray(session.messages) ? [...session.messages] : [];
+
+        // Append user message
+        messages.push({
+            text: String(text || '').trim(),
+            timestamp: nowSec,
+            is_user: true
+        });
+
+        // Generate assistant reply
+        const reply = await generateAssistantReply(messages, uid);
+
+        messages.push({
+            text: reply,
+            timestamp: nowSec + 0.1,
+            is_user: false
+        });
+
+        // Persist
+        const { error } = await supabase
+            .from('jarvis_sessions')
+            .update({
+                uid,
+                messages,
+                last_activity: new Date().toISOString()
+            })
+            .eq('session_id', sessionId);
+
+        if (error) throw error;
+
+        return res.json({ session_id: sessionId, messages });
+    } catch (err) {
+        console.error('Error sending chat message:', err);
+        res.status(500).json({ error: 'Failed to send message' });
+    }
+});
+
 // Save action to frienddb goals field (reusing Friend's structure)
 app.post('/api/actions', async (req, res) => {
     const { uid, type, text, date } = req.body;
@@ -626,6 +912,59 @@ app.post('/api/preferences', async (req, res) => {
         res.status(500).json({ error: 'Failed to save preferences' });
     }
 });
+
+// Tool definitions for function-calling capable backends (schema only)
+const TOOL_CALLING_ENABLED = String(process.env.TOOL_CALLING_ENABLED || 'false').toLowerCase() === 'true';
+const jarvisTools = TOOL_CALLING_ENABLED ? [
+    {
+        type: 'function',
+        function: {
+            name: 'add_action',
+            description: 'Create an action (task, reminder, event, note) for the current user',
+            parameters: {
+                type: 'object',
+                properties: {
+                    type: { type: 'string', enum: ['task', 'reminder', 'event', 'note'] },
+                    text: { type: 'string' },
+                    date: { type: 'string', description: 'ISO datetime, optional' }
+                },
+                required: ['type', 'text']
+            }
+        }
+    },
+    {
+        type: 'function',
+        function: {
+            name: 'get_actions',
+            description: 'List actions for the current user',
+            parameters: { type: 'object', properties: {}, additionalProperties: false }
+        }
+    },
+    {
+        type: 'function',
+        function: {
+            name: 'get_analytics',
+            description: 'Get analytics summary for the current user',
+            parameters: { type: 'object', properties: {}, additionalProperties: false }
+        }
+    },
+    {
+        type: 'function',
+        function: {
+            name: 'get_preferences',
+            description: 'Get user preference values such as salutation',
+            parameters: { type: 'object', properties: {}, additionalProperties: false }
+        }
+    }
+] : undefined;
+
+// Helper to attach tool schemas if enabled
+function maybeAttachTools(payload) {
+    if (TOOL_CALLING_ENABLED && jarvisTools) {
+        return { ...payload, tools: jarvisTools };
+    }
+    return payload;
+}
 
 // Start the server
 const port = process.env.PORT || 3000;
