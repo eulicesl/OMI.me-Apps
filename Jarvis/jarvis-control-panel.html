@@ -16,13 +16,17 @@
         body {
             font-family: 'Orbitron', monospace;
             background: #000;
-            min-height: 100vh;
+            min-height: 100dvh;
             display: flex;
             justify-content: center;
             align-items: center;
-            overflow: hidden;
+            /* Prevent horizontal scroll globally, allow vertical only when needed */
+            overflow-x: hidden;
+            overflow-y: auto;
             position: relative;
             color: #00d4ff;
+            -webkit-overflow-scrolling: touch;
+            scroll-behavior: smooth;
         }
 
         /* Animated background grid */
@@ -53,7 +57,7 @@
             width: 100%;
             height: 100%;
             pointer-events: none;
-            overflow: hidden;
+            overflow: hidden; /* keep particles from causing side-scroll */
         }
 
         .particle {
@@ -98,6 +102,8 @@
             backdrop-filter: blur(10px);
             position: relative;
             animation: container-glow 2s ease-in-out infinite alternate;
+            /* Ensure container never exceeds viewport width on small screens */
+            overflow: hidden;
         }
 
         @keyframes container-glow {
@@ -218,7 +224,7 @@
             padding: 20px;
             border: 1px solid rgba(0, 212, 255, 0.5);
             border-radius: 10px;
-            font-size: 1em;
+            font-size: 16px;
             font-weight: 600;
             cursor: pointer;
             transition: all 0.3s ease;
@@ -326,7 +332,7 @@
             transition: all 0.2s;
             text-decoration: none;
             text-align: center;
-            font-size: 0.85em;
+            font-size: 16px;
             text-transform: uppercase;
             letter-spacing: 1px;
         }
@@ -450,7 +456,7 @@
             background: none;
             border: none;
             color: #00d4ff;
-            font-size: 1.5em;
+            font-size: 24px;
             cursor: pointer;
             transition: transform 0.2s;
         }
@@ -513,7 +519,7 @@
             color: #00d4ff;
             cursor: pointer;
             transition: all 0.2s;
-            font-size: 0.85em;
+            font-size: 16px;
             text-transform: uppercase;
         }
 
@@ -545,6 +551,8 @@
             color: #00d4ff;
             font-family: 'Orbitron', monospace;
             transition: all 0.3s;
+            /* Prevent iOS Safari zoom on focus */
+            font-size: 16px;
         }
 
         .input-field:focus {
@@ -552,6 +560,14 @@
             border-color: #00d4ff;
             background: rgba(0, 50, 100, 0.5);
             box-shadow: 0 0 10px rgba(0, 212, 255, 0.3);
+        }
+        
+        /* Visible keyboard focus for accessibility */
+        .btn:focus-visible,
+        .input-field:focus-visible,
+        button:focus-visible {
+            outline: 2px solid #00ffff;
+            outline-offset: 2px;
         }
 
         /* Stats display */
@@ -624,13 +640,23 @@
             0%, 100% { transform: scale(1); }
             50% { transform: scale(1.1); }
         }
+
+        /* Reduced motion support */
+        @media (prefers-reduced-motion: reduce) {
+            *, *::before, *::after {
+                animation-duration: 0.01ms !important;
+                animation-iteration-count: 1 !important;
+                transition-duration: 0.01ms !important;
+                scroll-behavior: auto !important;
+            }
+        }
     </style>
 </head>
 <body>
     <!-- Particle effects -->
     <div class="particles" id="particles"></div>
 
-    <div class="container">
+    <div class="container" role="main">
         <!-- Corner decorations -->
         <div class="corner corner-tl"></div>
         <div class="corner corner-tr"></div>
@@ -643,11 +669,11 @@
         <h1>J.A.R.V.I.S.</h1>
         <p class="subtitle">Just A Rather Very Intelligent System</p>
         
-        <div class="status" id="status">
+        <div class="status" id="status" role="status" aria-live="polite">
             ◉ SYSTEM ONLINE - ALL MODULES OPERATIONAL
         </div>
 
-        <div class="button-grid">
+        <div class="button-grid" role="group" aria-label="Main controls">
             <button class="btn btn-primary" onclick="showDailyBriefing()">
                 <span class="emoji">⚡</span>
                 <span>DAILY BRIEFING</span>
@@ -698,12 +724,12 @@
         </div>
     </div>
 
-    <div class="notification" id="notification">
+    <div class="notification" id="notification" role="alert" aria-live="assertive">
         INITIALIZING PROTOCOL...
     </div>
 
     <!-- Modal for displaying content -->
-    <div class="modal" id="modal">
+    <div class="modal" id="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
         <div class="modal-content">
             <div class="modal-header">
                 <h2 class="modal-title" id="modalTitle">JARVIS INTERFACE</h2>
