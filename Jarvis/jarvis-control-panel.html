@@ -624,53 +624,6 @@
             0%, 100% { transform: scale(1); }
             50% { transform: scale(1.1); }
         }
-        /* Chat UI */
-        .chat-container {
-            display: flex;
-            flex-direction: column;
-            gap: 12px;
-        }
-        .chat-messages {
-            max-height: 50vh;
-            overflow-y: auto;
-            padding: 12px;
-            background: rgba(0, 30, 60, 0.4);
-            border: 1px solid rgba(0, 212, 255, 0.2);
-            border-radius: 10px;
-        }
-        .chat-row {
-            margin: 8px 0;
-            display: flex;
-        }
-        .chat-row.user { justify-content: flex-end; }
-        .chat-row.bot { justify-content: flex-start; }
-        .chat-bubble {
-            max-width: 80%;
-            padding: 10px 12px;
-            border-radius: 10px;
-            line-height: 1.4;
-            color: #00d4ff;
-            background: rgba(0, 100, 150, 0.25);
-            border: 1px solid rgba(0, 212, 255, 0.3);
-        }
-        .chat-row.user .chat-bubble {
-            background: rgba(0, 255, 200, 0.15);
-            border-color: rgba(0, 255, 200, 0.35);
-        }
-        .chat-controls {
-            display: flex;
-            gap: 10px;
-        }
-        .chat-input {
-            flex: 1;
-        }
-        .toggle-row {
-            display: flex;
-            gap: 16px;
-            align-items: center;
-            color: rgba(0, 212, 255, 0.8);
-            font-size: 0.85em;
-        }
     </style>
 </head>
 <body>
@@ -725,7 +678,7 @@
                 <span>EXPORT SUMMARY</span>
             </button>
             <!-- NEW: Open Chat -->
-            <button class="btn btn-primary" onclick="openChatInterface()">
+            <button class="btn btn-primary" onclick="openChatPage()">
                 <span class="emoji">💬</span>
                 <span>OPEN CHAT</span>
             </button>
@@ -1823,99 +1776,15 @@ ${separator}
             showNotification('📝 TEXT DOCUMENT DOWNLOADED');
         }
 
-        // Chat Interface Functions
-        function getChatSessionId() {
-            const key = `jarvis_chat_session_${UID}`;
-            let sid = localStorage.getItem(key);
-            if (!sid) {
-                sid = `CHAT-${UID}-${Date.now().toString(36).toUpperCase()}`;
-                localStorage.setItem(key, sid);
-            }
-            return sid;
-        }
-
-        function escapeHtml(text) {
-            const div = document.createElement('div');
-            div.textContent = text;
-            return div.innerHTML;
-        }
-
-        async function openChatInterface() {
-            if (!storage) {
+        // Navigate to dedicated chat page
+        function openChatPage() {
+            if (!UID) {
                 showNotification('❌ Please reload the page with your UID');
                 return;
             }
-
-            updateStatus('◉ INITIALIZING CHAT', true);
-
-            const sessionId = getChatSessionId();
-            const data = await storage.getChat(sessionId);
-
-            const content = `
-                <div class="chat-container">
-                    <div id="chatMessages" class="chat-messages"></div>
-                    <div class="chat-controls">
-                        <input id="chatInput" class="input-field chat-input" placeholder="Ask J.A.R.V.I.S. anything..." autocomplete="off">
-                        <button class="btn" onclick="sendChat()">SEND</button>
-                    </div>
-                </div>
-            `;
-
-            openModal('JARVIS CHAT', content);
-            renderChatMessages(data?.messages || []);
-            setTimeout(() => updateStatus('◉ SYSTEM ONLINE'), 800);
-
-            // Enter key
-            const input = document.getElementById('chatInput');
-            input?.addEventListener('keydown', (e) => {
-                if (e.key === 'Enter' && !e.shiftKey) {
-                    e.preventDefault();
-                    sendChat();
-                }
-            });
             
-            // Focus input
-            setTimeout(() => input?.focus(), 100);
-        }
-
-        function renderChatMessages(messages) {
-            const box = document.getElementById('chatMessages');
-            if (!box) return;
-            box.innerHTML = (messages || []).map(m => {
-                const cls = m.is_user ? 'user' : 'bot';
-                const txt = escapeHtml(m.text || '');
-                return `<div class="chat-row ${cls}"><div class="chat-bubble">${txt}</div></div>`;
-            }).join('');
-            box.scrollTop = box.scrollHeight;
-        }
-
-        async function sendChat() {
-            if (!storage) return;
-            const input = document.getElementById('chatInput');
-            const text = (input?.value || '').trim();
-            if (!text) return;
-
-            const sessionId = getChatSessionId();
-            updateStatus('◉ PROCESSING...', true);
-            
-            // Show user message immediately
-            const messages = document.getElementById('chatMessages');
-            if (messages) {
-                const currentMessages = messages.innerHTML;
-                messages.innerHTML = currentMessages + 
-                    `<div class="chat-row user"><div class="chat-bubble">${escapeHtml(text)}</div></div>`;
-                messages.scrollTop = messages.scrollHeight;
-            }
-
-            const result = await storage.sendChatMessage(sessionId, text);
-
-            if (result?.messages) {
-                renderChatMessages(result.messages);
-                input.value = '';
-                setTimeout(() => updateStatus('◉ SYSTEM ONLINE'), 600);
-            } else {
-                updateStatus('◉ SYSTEM ONLINE');
-            }
+            // Navigate to the dedicated chat page with UID
+            window.location.href = `/chat?uid=${UID}`;
         }
 
         // Keyboard shortcuts

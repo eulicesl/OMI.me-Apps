@@ -77,6 +77,19 @@ app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, 'jarvis-control-panel.html'));
 });
 
+// Serve the dedicated chat page
+app.get('/chat', (req, res) => {
+    const uid = req.query.uid;
+    
+    // Require UID for chat page
+    if (uid && typeof uid === 'string' && uid.length >= 3 && uid.length <= 50) {
+        return res.sendFile(path.join(__dirname, 'jarvis-chat.html'));
+    }
+    
+    // Redirect to main page if no valid UID
+    res.redirect('/');
+});
+
 // Using existing tables:
 // - jarvis_sessions: For storing OMI webhook data (transcripts)
 // - frienddb.goals: For storing user actions/tasks (shared with Friend app)
