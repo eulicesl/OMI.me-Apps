@@ -1490,44 +1490,57 @@
         }
 
         async function downloadJSON() {
-            if (!storage) {
-                showNotification('❌ Please reload the page with your UID');
-                return;
-            }
-            // If export data hasn't been generated, generate it now
-            if (!window.jarvisExportData) {
-                showNotification('⚡ PREPARING EXPORT...');
-                const analytics = await storage.getAnalytics();
-                const actions = await storage.getActions();
-                const transcripts = await storage.getTranscripts();
+            try {
+                if (!storage) {
+                    showNotification('❌ Please reload the page with your UID');
+                    return;
+                }
+                // If export data hasn't been generated, generate it now
+                if (!window.jarvisExportData) {
+                    showNotification('⚡ PREPARING EXPORT...');
+                    const analytics = await storage.getAnalytics();
+                    const actions = await storage.getActions();
+                    const transcripts = await storage.getTranscripts();
+                    
+                    window.jarvisExportData = {
+                        generated: new Date().toISOString(),
+                        sessionId: 'JARVIS-' + Date.now().toString(36).toUpperCase(),
+                        analytics: analytics,
+                        actions: actions,
+                        transcripts: transcripts,
+                        summary: {
+                            totalActions: actions?.length || 0,
+                            pending: actions?.filter(a => !a.completed).length || 0,
+                            completed: actions?.filter(a => a.completed).length || 0,
+                            transcriptCount: transcripts?.length || 0
+                        }
+                    };
+                }
                 
-                window.jarvisExportData = {
-                    generated: new Date().toISOString(),
-                    sessionId: 'JARVIS-' + Date.now().toString(36).toUpperCase(),
-                    analytics: analytics,
-                    actions: actions,
-                    transcripts: transcripts,
-                    summary: {
-                        totalActions: actions.length,
-                        pending: actions.filter(a => !a.completed).length,
-                        completed: actions.filter(a => a.completed).length,
-                        transcriptCount: transcripts.length
-                    }
-                };
+                console.log('Export data:', window.jarvisExportData);
+                
+                // Use Blob approach for better compatibility
+                const dataStr = JSON.stringify(window.jarvisExportData, null, 2);
+                const blob = new Blob([dataStr], { type: 'application/json' });
+                const url = window.URL.createObjectURL(blob);
+                const exportFileDefaultName = `jarvis-export-${Date.now()}.json`;
+                
+                const linkElement = document.createElement('a');
+                linkElement.href = url;
+                linkElement.download = exportFileDefaultName;
+                linkElement.style.display = 'none';
+                document.body.appendChild(linkElement);
+                linkElement.click();
+                document.body.removeChild(linkElement);
+                
+                // Clean up the URL object
+                setTimeout(() => window.URL.revokeObjectURL(url), 100);
+                
+                showNotification('📥 DOWNLOAD STARTED');
+            } catch (error) {
+                console.error('Download error:', error);
+                showNotification('❌ DOWNLOAD FAILED: ' + error.message);
             }
-            
-            const dataStr = JSON.stringify(window.jarvisExportData, null, 2);
-            const dataUri = 'data:application/json;charset=utf-8,'+ encodeURIComponent(dataStr);
-            const exportFileDefaultName = `jarvis-export-${Date.now()}.json`;
-            
-            const linkElement = document.createElement('a');
-            linkElement.setAttribute('href', dataUri);
-            linkElement.setAttribute('download', exportFileDefaultName);
-            linkElement.style.display = 'none';
-            document.body.appendChild(linkElement);
-            linkElement.click();
-            document.body.removeChild(linkElement);
-            showNotification('📥 DOWNLOAD STARTED');
         }
 
         async function copyMarkdown() {
