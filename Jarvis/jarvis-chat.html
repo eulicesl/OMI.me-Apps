@@ -143,9 +143,10 @@
 
         /* Message bubbles */
         .message {
-            margin: 15px 0;
+            margin: 10px 0;
             display: flex;
             animation: fadeIn 0.3s;
+            align-items: flex-start;
         }
 
         @keyframes fadeIn {
@@ -155,40 +156,55 @@
 
         .message.user {
             justify-content: flex-end;
+            padding-right: 10px;
         }
 
         .message.assistant {
             justify-content: flex-start;
+            padding-left: 10px;
+        }
+
+        .message-wrapper {
+            display: flex;
+            max-width: 65%;
+        }
+
+        .message.user .message-wrapper {
+            justify-content: flex-end;
+        }
+
+        .message.assistant .message-wrapper {
+            justify-content: flex-start;
         }
 
         .message-bubble {
-            max-width: 70%;
-            padding: 12px 16px;
-            border-radius: 12px;
+            display: inline-block;
+            padding: 10px 14px;
+            border-radius: 16px;
             line-height: 1.4;
             font-size: 14px;
             position: relative;
             /* Aggressive word breaking to prevent horizontal overflow */
             word-wrap: break-word;
             overflow-wrap: break-word;
-            word-break: break-word;
+            word-break: normal;
             white-space: pre-wrap;
             /* Hide any overflow content */
             overflow: hidden;
         }
 
         .message.user .message-bubble {
-            background: linear-gradient(135deg, rgba(0, 255, 200, 0.15) 0%, rgba(0, 212, 255, 0.15) 100%);
-            border: 1px solid rgba(0, 255, 200, 0.3);
+            background: linear-gradient(135deg, rgba(0, 255, 200, 0.18) 0%, rgba(0, 212, 255, 0.15) 100%);
+            border: 1px solid rgba(0, 255, 200, 0.35);
             color: #00ffcc;
-            border-bottom-right-radius: 5px;
+            border-bottom-right-radius: 4px;
         }
 
         .message.assistant .message-bubble {
-            background: linear-gradient(135deg, rgba(0, 100, 150, 0.2) 0%, rgba(0, 50, 100, 0.2) 100%);
-            border: 1px solid rgba(0, 212, 255, 0.3);
+            background: linear-gradient(135deg, rgba(0, 100, 150, 0.25) 0%, rgba(0, 50, 100, 0.2) 100%);
+            border: 1px solid rgba(0, 212, 255, 0.35);
             color: #00d4ff;
-            border-bottom-left-radius: 5px;
+            border-bottom-left-radius: 4px;
         }
 
 
@@ -382,9 +398,9 @@
                 margin-bottom: 12px;
             }
             .message-bubble {
-                max-width: 85%;
+                max-width: 80%;
                 font-size: 14px;
-                padding: 10px 14px;
+                padding: 9px 12px;
             }
             .input-container {
                 flex-direction: column;
@@ -425,11 +441,13 @@
 
         <div class="typing-indicator" id="typingIndicator">
             <div class="message assistant">
-                <div class="message-bubble">
-                    <div class="typing-dots">
-                        <span></span>
-                        <span></span>
-                        <span></span>
+                <div class="message-wrapper">
+                    <div class="message-bubble">
+                        <div class="typing-dots">
+                            <span></span>
+                            <span></span>
+                            <span></span>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -540,9 +558,11 @@
                     const time = formatTime(msg.timestamp);
                     return `
                         <div class="message ${type}">
-                            <div class="message-bubble">
-                                ${escapeHtml(sanitizeText(msg.text))}
-                                <div class="message-time">${time}</div>
+                            <div class="message-wrapper">
+                                <div class="message-bubble">
+                                    ${escapeHtml(sanitizeText(msg.text))}
+                                    <div class="message-time">${time}</div>
+                                </div>
                             </div>
                         </div>
                     `;
@@ -586,9 +606,11 @@
             const nearBottom = (messagesContainer.scrollHeight - messagesContainer.scrollTop - messagesContainer.clientHeight) < 100;
             const messageHtml = `
                 <div class="message ${type}">
-                    <div class="message-bubble">
-                        ${escapeHtml(sanitizeText(text))}
-                        <div class="message-time">${time}</div>
+                    <div class="message-wrapper">
+                        <div class="message-bubble">
+                            ${escapeHtml(sanitizeText(text))}
+                            <div class="message-time">${time}</div>
+                        </div>
                     </div>
                 </div>
             `;
