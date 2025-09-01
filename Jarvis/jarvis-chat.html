@@ -165,26 +165,19 @@
         }
 
         .message-wrapper {
-            display: flex;
-            max-width: 65%;
-        }
-
-        .message.user .message-wrapper {
-            justify-content: flex-end;
-        }
-
-        .message.assistant .message-wrapper {
-            justify-content: flex-start;
+            display: contents;
         }
 
         .message-bubble {
             display: inline-block;
-            padding: 10px 14px;
+            max-width: 65%;
+            min-width: fit-content;
+            padding: 8px 12px;
             border-radius: 16px;
             line-height: 1.4;
             font-size: 14px;
             position: relative;
-            /* Aggressive word breaking to prevent horizontal overflow */
+            /* Word breaking for long content */
             word-wrap: break-word;
             overflow-wrap: break-word;
             word-break: normal;
@@ -398,9 +391,9 @@
                 margin-bottom: 12px;
             }
             .message-bubble {
-                max-width: 80%;
+                max-width: 75%;
                 font-size: 14px;
-                padding: 9px 12px;
+                padding: 8px 11px;
             }
             .input-container {
                 flex-direction: column;
