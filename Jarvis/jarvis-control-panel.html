@@ -850,6 +850,28 @@
                 }
             }
 
+            async getSmartActions() {
+                try {
+                    const response = await fetch(`${this.baseUrl}/api/smart-actions?uid=${this.uid}`);
+                    if (!response.ok) throw new Error('Failed to fetch smart actions');
+                    return await response.json();
+                } catch (err) {
+                    console.error('Error fetching smart actions:', err);
+                    return null;
+                }
+            }
+
+            async getInsights() {
+                try {
+                    const response = await fetch(`${this.baseUrl}/api/insights?uid=${this.uid}`);
+                    if (!response.ok) throw new Error('Failed to fetch insights');
+                    return await response.json();
+                } catch (err) {
+                    console.error('Error fetching insights:', err);
+                    return null;
+                }
+            }
+
             async getChat(sessionId) {
                 try {
                     const url = sessionId
@@ -1153,22 +1175,28 @@
             showNotification('🎯 ANALYZING SMART ACTIONS...');
             updateStatus('◉ PROCESSING INTELLIGENT SUGGESTIONS', true);
             
-            const actions = await storage.getActions();
-            const today = new Date().toDateString();
-            const todayActions = actions.filter(a => new Date(a.created_at || a.created).toDateString() === today);
-            const pendingActions = actions.filter(a => !a.completed);
+            // Fetch AI-powered smart actions
+            const smartData = await storage.getSmartActions();
             
-            // Smart categorization
-            const highPriority = pendingActions.filter(a => 
-                a.text.toLowerCase().includes('urgent') || 
-                a.text.toLowerCase().includes('important') ||
-                a.text.toLowerCase().includes('asap')
-            );
+            if (!smartData) {
+                // Fallback to basic analysis
+                const actions = await storage.getActions();
+                smartData = {
+                    actions,
+                    pending: actions.filter(a => !a.completed),
+                    high_priority: actions.filter(a => 
+                        a.text.toLowerCase().includes('urgent') || 
+                        a.text.toLowerCase().includes('important')
+                    ),
+                    recurring_patterns: [],
+                    suggestions: ['Review pending tasks', 'Set daily goals'],
+                    stats: {
+                        today: actions.filter(a => new Date(a.created_at || a.created).toDateString() === new Date().toDateString()).length
+                    }
+                };
+            }
             
-            const recurring = actions.filter(a => {
-                const text = a.text.toLowerCase();
-                return text.includes('daily') || text.includes('weekly') || text.includes('every');
-            });
+            const { high_priority, recurring_patterns, suggestions, stats } = smartData;
             
             const content = `
                 <div style="margin-bottom: 20px;">
@@ -1176,10 +1204,10 @@
                     <p style="color: #00ff88; font-size: 0.85em;">✨ AI-powered task prioritization and suggestions</p>
                 </div>
                 
-                ${highPriority.length > 0 ? `
+                ${high_priority && high_priority.length > 0 ? `
                     <div style="margin-bottom: 20px;">
                         <h4 style="color: #ff6b6b; margin-bottom: 10px;">⚡ HIGH PRIORITY</h4>
-                        ${highPriority.slice(0, 3).map(action => `
+                        ${high_priority.slice(0, 3).map(action => `
                             <div class="action-card" style="border-color: #ff6b6b;">
                                 <span class="action-type" style="background: rgba(255, 107, 107, 0.2);">URGENT</span>
                                 <div class="action-text">${action.text}</div>
@@ -1193,15 +1221,17 @@
                 ` : ''}
                 
                 <div style="margin-bottom: 20px;">
-                    <h4 style="color: #00d4ff; margin-bottom: 10px;">🤖 SUGGESTED ACTIONS</h4>
-                    <div class="action-card">
-                        <span class="action-type" style="background: rgba(0, 212, 255, 0.2);">AI SUGGESTION</span>
-                        <div class="action-text">Review and organize ${pendingActions.length} pending tasks</div>
-                        <div class="action-buttons" style="margin-top: 10px;">
-                            <button class="action-btn" onclick="autoOrganizeTasks()">AUTO-ORGANIZE</button>
+                    <h4 style="color: #00d4ff; margin-bottom: 10px;">🤖 AI SUGGESTIONS</h4>
+                    ${suggestions && suggestions.map(suggestion => `
+                        <div class="action-card">
+                            <span class="action-type" style="background: rgba(0, 212, 255, 0.2);">AI SUGGESTION</span>
+                            <div class="action-text">${suggestion}</div>
+                            <div class="action-buttons" style="margin-top: 10px;">
+                                <button class="action-btn" onclick="autoOrganizeTasks()">APPLY</button>
+                            </div>
                         </div>
-                    </div>
-                    ${todayActions.length === 0 ? `
+                    `).join('')}
+                    ${stats && stats.today === 0 ? `
                         <div class="action-card">
                             <span class="action-type" style="background: rgba(0, 212, 255, 0.2);">AI SUGGESTION</span>
                             <div class="action-text">Start your day by setting 3 key goals</div>
@@ -1212,11 +1242,11 @@
                     ` : ''}
                 </div>
                 
-                ${recurring.length > 0 ? `
+                ${recurring_patterns && recurring_patterns.length > 0 ? `
                     <div style="margin-bottom: 20px;">
                         <h4 style="color: #00d4ff; margin-bottom: 10px;">🔄 RECURRING PATTERNS</h4>
-                        <p style="color: rgba(0, 212, 255, 0.5); font-size: 0.85em;">JARVIS detected ${recurring.length} recurring tasks</p>
-                        ${recurring.slice(0, 2).map(action => `
+                        <p style="color: rgba(0, 212, 255, 0.5); font-size: 0.85em;">JARVIS detected ${recurring_patterns.length} recurring tasks</p>
+                        ${recurring_patterns.slice(0, 2).map(action => `
                             <div class="action-card">
                                 <span class="action-type" style="background: rgba(0, 150, 255, 0.2);">RECURRING</span>
                                 <div class="action-text">${action.text}</div>
@@ -1469,8 +1499,8 @@
             showNotification('🔍 DISCOVERING PATTERNS...');
             updateStatus('◉ ANALYZING BEHAVIORAL INSIGHTS', true);
             
-            const actions = await storage.getActions();
-            const analytics = await storage.getAnalytics();
+            // Fetch AI-powered insights
+            const insightsData = await storage.getInsights();
             
             // Pattern analysis
             const taskTypes = {};

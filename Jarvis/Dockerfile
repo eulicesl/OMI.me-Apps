@@ -24,12 +24,12 @@ COPY . .
 RUN chown -R nextjs:nodejs /app
 USER nextjs
 
-# Expose port
-EXPOSE 8000
+# Expose port used by the app
+EXPOSE 3000
 
-# Health check
+# Health check targets the app port (DigitalOcean sets PORT at runtime)
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-  CMD curl -f http://localhost:8000/ || exit 1
+  CMD sh -c 'curl -f http://localhost:${PORT:-3000}/ || exit 1'
 
 # Start the application
 CMD ["npm", "start"] 

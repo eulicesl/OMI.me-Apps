@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Test JSON Download</title>
+</head>
+<body>
+    <h1>JSON Download Test</h1>
+    <button onclick="testMethod1()">Method 1: Data URI</button>
+    <button onclick="testMethod2()">Method 2: Blob</button>
+    <button onclick="testMethod3()">Method 3: Simplified Blob</button>
+    <div id="status"></div>
+
+    <script>
+        function log(msg) {
+            console.log(msg);
+            document.getElementById('status').innerHTML += `<p>${new Date().toISOString().slice(11,19)} - ${msg}</p>`;
+        }
+
+        // Method 1: Using data URI (original approach)
+        function testMethod1() {
+            try {
+                log('Testing Method 1: Data URI');
+                const testData = {
+                    test: "method1",
+                    timestamp: new Date().toISOString(),
+                    data: [1, 2, 3]
+                };
+                
+                const dataStr = JSON.stringify(testData, null, 2);
+                const dataUri = 'data:application/json;charset=utf-8,'+ encodeURIComponent(dataStr);
+                const filename = `test1-${Date.now()}.json`;
+                
+                const link = document.createElement('a');
+                link.setAttribute('href', dataUri);
+                link.setAttribute('download', filename);
+                link.style.display = 'none';
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+                
+                log('✅ Method 1 completed');
+            } catch (e) {
+                log('❌ Method 1 failed: ' + e.message);
+            }
+        }
+
+        // Method 2: Using Blob and URL.createObjectURL
+        function testMethod2() {
+            try {
+                log('Testing Method 2: Blob');
+                const testData = {
+                    test: "method2",
+                    timestamp: new Date().toISOString(),
+                    data: [4, 5, 6]
+                };
+                
+                const dataStr = JSON.stringify(testData, null, 2);
+                const blob = new Blob([dataStr], { type: 'application/json' });
+                const url = window.URL.createObjectURL(blob);
+                const filename = `test2-${Date.now()}.json`;
+                
+                const link = document.createElement('a');
+                link.href = url;
+                link.download = filename;
+                link.style.display = 'none';
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+                
+                setTimeout(() => window.URL.revokeObjectURL(url), 100);
+                
+                log('✅ Method 2 completed');
+            } catch (e) {
+                log('❌ Method 2 failed: ' + e.message);
+            }
+        }
+
+        // Method 3: Simplified approach
+        function testMethod3() {
+            try {
+                log('Testing Method 3: Simplified');
+                const testData = {
+                    test: "method3",
+                    timestamp: new Date().toISOString(),
+                    data: [7, 8, 9]
+                };
+                
+                const json = JSON.stringify(testData, null, 2);
+                const blob = new Blob([json], {type: "application/json"});
+                const href = URL.createObjectURL(blob);
+                
+                // Create link and trigger download
+                const link = document.createElement('a');
+                link.href = href;
+                link.download = `test3-${Date.now()}.json`;
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+                
+                // Delay URL cleanup
+                setTimeout(() => { URL.revokeObjectURL(href); }, 0);
+                
+                log('✅ Method 3 completed');
+            } catch (e) {
+                log('❌ Method 3 failed: ' + e.message);
+            }
+        }
+
+        // Test all methods automatically
+        window.onload = function() {
+            log('Page loaded, ready for testing');
+        }
+    </script>
+</body>
+</html>

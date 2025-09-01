@@ -562,7 +562,7 @@ app.get('/status', async (req, res) => {
 
 // API Endpoints for Frontend (following Friend/Brain pattern)
 
-// Get user's transcripts from jarvis_sessions
+// Get user's transcripts from OMI backend (real device memories) or fallback to chat sessions
 app.get('/api/transcripts', async (req, res) => {
     const uid = req.query.uid;
     
@@ -571,6 +571,46 @@ app.get('/api/transcripts', async (req, res) => {
     }
 
     try {
+        // First try to fetch from OMI API if configured
+        const omiApiKey = process.env.OMI_API_KEY;
+        const omiBaseUrl = process.env.OMI_API_BASE_URL || 'https://api.omi.me';
+        
+        if (omiApiKey && omiApiKey !== 'your_omi_api_key_here') {
+            try {
+                // Fetch memories from OMI API
+                const omiResponse = await fetch(`${omiBaseUrl}/v3/memories?limit=50&offset=0`, {
+                    method: 'GET',
+                    headers: {
+                        'Authorization': `Bearer ${omiApiKey}`,
+                        'Content-Type': 'application/json'
+                    }
+                });
+
+                if (omiResponse.ok) {
+                    const memories = await omiResponse.json();
+                    
+                    // Format OMI memories as transcripts for the frontend
+                    const transcripts = (memories || []).map(memory => ({
+                        id: memory.id,
+                        text: memory.content || memory.transcript || '',
+                        created: memory.created_at || memory.created || new Date().toISOString(),
+                        session_id: memory.session_id || `omi-${memory.id}`,
+                        source: 'omi_device',
+                        category: memory.category,
+                        metadata: memory.metadata || {}
+                    }));
+
+                    console.log(`Fetched ${transcripts.length} memories from OMI for UID: ${uid}`);
+                    return res.json(transcripts);
+                }
+            } catch (omiError) {
+                console.error('Error fetching from OMI API:', omiError);
+                // Fall back to local sessions
+            }
+        }
+
+        // Fallback: fetch from local Jarvis sessions (chat history)
+        console.log('OMI API not configured or failed, using local chat sessions');
         const { data: sessions } = await supabase
             .from('jarvis_sessions')
             .select('*')
@@ -584,13 +624,230 @@ app.get('/api/transcripts', async (req, res) => {
             text: session.messages?.map(m => m.text).join(' ') || '',
             messages: session.messages || [],
             created: session.created_at,
-            session_id: session.session_id
+            session_id: session.session_id,
+            source: 'jarvis_chat'
         }));
 
         res.json(transcripts);
     } catch (err) {
         console.error("Error fetching transcripts:", err);
         res.status(500).json({ error: "Failed to fetch transcripts" });
+    }
+});
+
+// AI-powered Smart Actions endpoint
+app.get('/api/smart-actions', async (req, res) => {
+    const uid = req.query.uid;
+    
+    if (!uid) {
+        return res.status(400).json({ error: 'UID is required' });
+    }
+
+    try {
+        // Get user's actions/goals
+        const { data: userData } = await supabase
+            .from('frienddb')
+            .select('goals')
+            .eq('uid', uid)
+            .single();
+
+        const actions = userData?.goals || [];
+        const pendingActions = actions.filter(a => !a.completed);
+        
+        // AI Analysis using OpenRouter
+        const analysisPrompt = `Analyze these tasks and provide smart prioritization:
+        ${JSON.stringify(pendingActions.map(a => a.text))}
+        
+        Return a JSON object with:
+        1. high_priority: array of task indices that are urgent
+        2. recurring_patterns: array of detected patterns
+        3. suggestions: array of 2-3 actionable suggestions
+        4. auto_categorization: object mapping task indices to categories`;
+
+        let aiAnalysis = {
+            high_priority: [],
+            recurring_patterns: [],
+            suggestions: [],
+            auto_categorization: {}
+        };
+
+        if (process.env.OPENROUTER_API_KEY) {
+            try {
+                const response = await openRouterClient.post('/chat/completions', {
+                    model: 'openai/gpt-3.5-turbo',
+                    messages: [
+                        { role: 'system', content: 'You are an AI task analyzer. Return only valid JSON.' },
+                        { role: 'user', content: analysisPrompt }
+                    ],
+                    temperature: 0.3,
+                    max_tokens: 500
+                });
+
+                const content = response.data.choices[0]?.message?.content;
+                if (content) {
+                    try {
+                        aiAnalysis = JSON.parse(content);
+                    } catch (e) {
+                        console.error('Failed to parse AI response:', e);
+                    }
+                }
+            } catch (err) {
+                console.error('AI analysis error:', err);
+            }
+        }
+
+        // Combine with basic pattern detection
+        const highPriority = pendingActions.filter((a, idx) => 
+            a.text.toLowerCase().includes('urgent') || 
+            a.text.toLowerCase().includes('important') ||
+            a.text.toLowerCase().includes('asap') ||
+            aiAnalysis.high_priority.includes(idx)
+        );
+
+        const recurring = actions.filter(a => {
+            const text = a.text.toLowerCase();
+            return text.includes('daily') || text.includes('weekly') || text.includes('every');
+        });
+
+        res.json({
+            actions,
+            pending: pendingActions,
+            high_priority: highPriority,
+            recurring_patterns: [...recurring, ...aiAnalysis.recurring_patterns],
+            suggestions: aiAnalysis.suggestions.length > 0 ? aiAnalysis.suggestions : [
+                'Review and organize pending tasks',
+                'Set 3 key goals for today',
+                'Schedule high-priority items first'
+            ],
+            categorization: aiAnalysis.auto_categorization,
+            stats: {
+                total: actions.length,
+                pending: pendingActions.length,
+                completed: actions.filter(a => a.completed).length,
+                today: actions.filter(a => 
+                    new Date(a.created_at || a.created).toDateString() === new Date().toDateString()
+                ).length
+            }
+        });
+    } catch (err) {
+        console.error('Error in smart actions:', err);
+        res.status(500).json({ error: 'Failed to analyze actions' });
+    }
+});
+
+// AI-powered Insights endpoint
+app.get('/api/insights', async (req, res) => {
+    const uid = req.query.uid;
+    
+    if (!uid) {
+        return res.status(400).json({ error: 'UID is required' });
+    }
+
+    try {
+        // Get user's actions and sessions
+        const [userData, sessions] = await Promise.all([
+            supabase.from('frienddb').select('goals').eq('uid', uid).single(),
+            supabase.from('jarvis_sessions').select('*').eq('uid', uid).order('created_at', { ascending: false }).limit(50)
+        ]);
+
+        const actions = userData.data?.goals || [];
+        
+        // Pattern analysis
+        const taskTypes = {};
+        const weekdayActivity = {};
+        const keywords = {};
+        const hourlyActivity = {};
+        
+        actions.forEach(action => {
+            // Type patterns
+            const type = action.type || 'task';
+            taskTypes[type] = (taskTypes[type] || 0) + 1;
+            
+            // Day patterns
+            const date = new Date(action.created_at || action.created);
+            const day = date.toLocaleDateString('en-US', { weekday: 'long' });
+            weekdayActivity[day] = (weekdayActivity[day] || 0) + 1;
+            
+            // Hour patterns
+            const hour = date.getHours();
+            hourlyActivity[hour] = (hourlyActivity[hour] || 0) + 1;
+            
+            // Keyword extraction
+            const words = action.text.toLowerCase().split(/\s+/);
+            const importantWords = ['meeting', 'email', 'call', 'review', 'prepare', 'send', 'schedule', 'finish', 'create', 'update'];
+            words.forEach(word => {
+                if (importantWords.includes(word)) {
+                    keywords[word] = (keywords[word] || 0) + 1;
+                }
+            });
+        });
+
+        // AI-powered insights
+        let aiInsights = {
+            patterns: [],
+            recommendations: [],
+            productivity_tips: []
+        };
+
+        if (process.env.OPENROUTER_API_KEY && actions.length > 5) {
+            try {
+                const insightPrompt = `Analyze this user's task patterns and provide insights:
+                Top keywords: ${JSON.stringify(Object.entries(keywords).slice(0, 5))}
+                Task types: ${JSON.stringify(taskTypes)}
+                Busiest day: ${Object.entries(weekdayActivity).sort((a, b) => b[1] - a[1])[0]}
+                
+                Provide 3 patterns, 3 recommendations, and 2 productivity tips as JSON.`;
+
+                const response = await openRouterClient.post('/chat/completions', {
+                    model: 'openai/gpt-3.5-turbo',
+                    messages: [
+                        { role: 'system', content: 'You are a productivity analyst. Return only valid JSON with patterns, recommendations, and productivity_tips arrays.' },
+                        { role: 'user', content: insightPrompt }
+                    ],
+                    temperature: 0.5,
+                    max_tokens: 400
+                });
+
+                const content = response.data.choices[0]?.message?.content;
+                if (content) {
+                    try {
+                        aiInsights = JSON.parse(content);
+                    } catch (e) {
+                        console.error('Failed to parse AI insights:', e);
+                    }
+                }
+            } catch (err) {
+                console.error('AI insights error:', err);
+            }
+        }
+
+        const topKeywords = Object.entries(keywords).sort((a, b) => b[1] - a[1]).slice(0, 5);
+        const busiestDay = Object.entries(weekdayActivity).sort((a, b) => b[1] - a[1])[0];
+        const peakHour = Object.entries(hourlyActivity).sort((a, b) => b[1] - a[1])[0];
+
+        res.json({
+            patterns: {
+                top_keywords: topKeywords,
+                busiest_day: busiestDay,
+                peak_hour: peakHour,
+                task_types: taskTypes,
+                ai_discovered: aiInsights.patterns
+            },
+            recommendations: aiInsights.recommendations.length > 0 ? aiInsights.recommendations : [
+                busiestDay ? `Schedule important tasks on ${busiestDay[0]}` : 'Track your tasks to discover patterns',
+                peakHour ? `Focus on complex work at ${peakHour[0]}:00` : 'Find your peak productivity hours',
+                'Create templates for recurring tasks'
+            ],
+            productivity_tips: aiInsights.productivity_tips,
+            stats: {
+                total_actions: actions.length,
+                total_sessions: sessions.data?.length || 0,
+                completion_rate: Math.round((actions.filter(a => a.completed).length / (actions.length || 1)) * 100)
+            }
+        });
+    } catch (err) {
+        console.error('Error generating insights:', err);
+        res.status(500).json({ error: 'Failed to generate insights' });
     }
 });
 

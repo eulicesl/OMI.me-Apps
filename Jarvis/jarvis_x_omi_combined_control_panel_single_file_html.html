@@ -1,0 +1,184 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>J.A.R.V.I.S. × OMI — Holographic Console</title>
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;700;900&display=swap" rel="stylesheet"/>
+<style>
+  /* === Liam's JARVIS theme (from your snippet), lightly condensed === */
+  :root{--cyan:#00d4ff;--cyan2:#00ffff;--ink:#cfe9ff;--ok:#00ff88;--bg0:#000;--bg1:rgba(0,30,60,.9);--bg2:rgba(0,20,40,.9)}
+  *{margin:0;padding:0;box-sizing:border-box}
+  html,body{height:100%}
+  body{font-family:'Orbitron',monospace;background:var(--bg0);min-height:100vh;display:flex;justify-content:center;align-items:center;overflow:hidden;color:var(--cyan)}
+  body::before{content:"";position:absolute;inset:0;background-image:linear-gradient(rgba(0,212,255,.03) 1px,transparent 1px),linear-gradient(90deg, rgba(0,212,255,.03) 1px,transparent 1px);background-size:50px 50px;animation:grid-move 10s linear infinite}
+  @keyframes grid-move{to{transform:translate(50px,50px)}}
+  .particles{position:fixed;inset:0;pointer-events:none;overflow:hidden}
+  .particle{position:absolute;background:radial-gradient(circle, rgba(0,212,255,.8) 0%, transparent 70%);width:2px;height:2px;animation:float 20s infinite}
+  @keyframes float{0%,100%{transform:translateY(100vh) translateX(0);opacity:0}10%,90%{opacity:1}100%{transform:translateY(-100vh) translateX(100px)}}
+  .container{position:relative;max-width:1100px;width:92%;padding:32px;border-radius:20px;background:linear-gradient(135deg,var(--bg1) 0%,var(--bg2) 100%);border:1px solid rgba(0,212,255,.3);box-shadow:0 0 50px rgba(0,212,255,.5), inset 0 0 20px rgba(0,212,255,.1);backdrop-filter:blur(10px);animation:glow 2s ease-in-out infinite alternate}
+  @keyframes glow{from{box-shadow:0 0 30px rgba(0,212,255,.5)}to{box-shadow:0 0 50px rgba(0,212,255,.8)}}
+  .corner{position:absolute;width:20px;height:20px;border:2px solid var(--cyan)}.corner-tl{top:-1px;left:-1px;border-right:none;border-bottom:none;border-top-left-radius:20px}.corner-tr{top:-1px;right:-1px;border-left:none;border-bottom:none;border-top-right-radius:20px}.corner-bl{bottom:-1px;left:-1px;border-right:none;border-top:none;border-bottom-left-radius:20px}.corner-br{bottom:-1px;right:-1px;border-left:none;border-top:none;border-bottom-right-radius:20px}
+  h1{text-align:center;color:var(--cyan);margin-bottom:6px;font-size:44px;letter-spacing:5px;text-shadow:0 0 10px rgba(0,212,255,.8),0 0 20px rgba(0,212,255,.6)}
+  .subtitle{text-align:center;color:rgba(0,212,255,.7);margin-bottom:20px;letter-spacing:3px;text-transform:uppercase}
+  .status{text-align:center;padding:12px;border:1px solid rgba(0,212,255,.3);border-radius:10px;margin-bottom:24px;color:var(--ok);background:linear-gradient(90deg,transparent,rgba(0,212,255,.1),transparent);position:relative;overflow:hidden}
+  .status::before{content:"";position:absolute;inset:0;left:-100%;background:linear-gradient(90deg,transparent,rgba(0,212,255,.3),transparent);animation:scan 3s infinite}
+  @keyframes scan{to{left:100%}}
+  .grid{display:grid;gap:18px}
+  .button-grid{grid-template-columns:repeat(auto-fit,minmax(220px,1fr))}
+  .btn{padding:18px;border:1px solid rgba(0,212,255,.5);border-radius:10px;cursor:pointer;transition:.25s;display:flex;align-items:center;justify-content:center;gap:12px;color:var(--cyan);background:linear-gradient(135deg,rgba(0,50,100,.3),rgba(0,30,60,.3));text-transform:uppercase;letter-spacing:2px}
+  .btn:hover{transform:translateY(-2px);box-shadow:0 5px 20px rgba(0,212,255,.4), inset 0 0 20px rgba(0,212,255,.1);border-color:var(--cyan)}
+  .btn-primary{border-color:var(--cyan2);animation:pulse 2s infinite}
+  @keyframes pulse{50%{box-shadow:0 0 30px rgba(0,255,255,.6)}}
+  .emoji{font-size:20px;filter:drop-shadow(0 0 5px rgba(0,212,255,.8))}
+  .section-title{color:rgba(0,212,255,.7);font-size:12px;text-transform:uppercase;letter-spacing:3px;margin:16px 0 8px;display:flex;align-items:center}
+  .section-title::before,.section-title::after{content:"";flex:1;height:1px;background:linear-gradient(90deg,transparent,rgba(0,212,255,.3),transparent);margin:0 10px}
+  .quick-actions{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
+  .quick-btn{padding:12px 8px;background:rgba(0,50,100,.2);border:1px solid rgba(0,212,255,.3);border-radius:8px;color:rgba(0,212,255,.85);cursor:pointer;transition:.2s;text-align:center;font-size:.85em;text-transform:uppercase}
+  .quick-btn:hover{background:rgba(0,212,255,.1);border-color:var(--cyan)}
+  .panel{margin-top:18px;display:grid;grid-template-columns:2fr 2fr 1.4fr;gap:18px}
+  .card{background:rgba(0,30,60,.35);border:1px solid rgba(0,212,255,.25);border-radius:12px;padding:14px;min-height:220px}
+  .card h3{font-size:14px;margin-bottom:10px;color:#bff1ff;letter-spacing:.15em}
+  .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+  .input{flex:1;min-width:140px;padding:10px;border:1px solid rgba(0,212,255,.3);border-radius:8px;background:rgba(0,30,60,.4);color:var(--ink)}
+  .small{font-size:12px;color:rgba(191,241,255,.7)}
+  .list{display:grid;gap:8px;max-height:320px;overflow:auto}
+  .item{padding:10px;border:1px solid rgba(0,212,255,.2);border-radius:10px;background:rgba(0,40,80,.35)}
+  .title{font-weight:700;color:#d9f7ff}
+  .sub{font-size:12px;color:#8fd5ff}
+  .pill{display:inline-block;padding:3px 8px;border:1px solid rgba(0,212,255,.35);border-radius:999px;background:rgba(0,212,255,.12);color:#a8ecff;font-size:11px}
+  .spinner{width:16px;height:16px;border:2px solid rgba(0,212,255,.25);border-top-color:var(--cyan);border-radius:50%;animation:spin 1s linear infinite}
+  @keyframes spin{to{transform:rotate(1turn)}}
+  .footer{text-align:center;color:rgba(0,212,255,.5);font-size:.8em;margin-top:16px;padding-top:12px;border-top:1px solid rgba(0,212,255,.1)}
+  .toast{position:fixed;right:16px;bottom:16px;display:none;padding:12px 14px;background:rgba(0,30,60,.8);border:1px solid rgba(0,212,255,.35);border-radius:12px;color:#cfe6ff;box-shadow:0 10px 30px rgba(0,0,0,.35)}
+  .toast.show{display:block}
+</style>
+</head>
+<body>
+  <div class="particles" id="particles"></div>
+  <div class="container">
+    <div class="corner corner-tl"></div><div class="corner corner-tr"></div><div class="corner corner-bl"></div><div class="corner corner-br"></div>
+    <h1>J.A.R.V.I.S.</h1>
+    <div class="subtitle">Just A Rather Very Intelligent System × OMI</div>
+    <div class="status" id="status">◉ SYSTEM ONLINE — ALL MODULES OPERATIONAL</div>
+
+    <div class="grid button-grid" style="margin-bottom:16px">
+      <button class="btn btn-primary" id="btnDaily"><span class="emoji">⚡</span><span>Daily Briefing</span></button>
+      <button class="btn" id="btnTranscripts"><span class="emoji">🎙️</span><span>Review Transcripts</span></button>
+      <button class="btn" id="btnActions"><span class="emoji">📡</span><span>Pending Actions</span></button>
+      <button class="btn" id="btnCapture"><span class="emoji">🗓️</span><span>Quick Capture</span></button>
+    </div>
+
+    <div class="section-title">Quick Access Protocols</div>
+    <div class="quick-actions">
+      <button class="quick-btn" id="qaTask">Add Task</button>
+      <button class="quick-btn" id="qaRem">Reminder</button>
+      <button class="quick-btn" id="qaEvt">Event</button>
+      <button class="quick-btn" id="qaNote">Note</button>
+    </div>
+
+    <!-- Inline OMI Control Panel (no separate page needed) -->
+    <div class="panel">
+      <section class="card">
+        <div class="row" style="justify-content:space-between">
+          <h3>Transcripts</h3>
+          <div class="row">
+            <input id="uid" class="input" placeholder="UID"/>
+            <input id="base" class="input" placeholder="(optional) Base URL"/>
+            <button class="btn" id="connect" style="padding:10px 14px">Connect</button>
+          </div>
+        </div>
+        <div class="row" style="margin:8px 0">
+          <span class="small">Limit</span>
+          <input id="limitConvo" class="input" type="number" min="1" max="100" value="25" style="width:90px"/>
+          <button class="btn" id="loadConvos" style="padding:8px 12px">Load</button>
+          <div id="spinConvos" class="spinner" style="display:none"></div>
+        </div>
+        <div class="list" id="conversations"></div>
+        <div class="row" style="justify-content:space-between;margin-top:8px">
+          <span class="small">Cursor: <span id="cursorVal">—</span></span>
+          <div class="row">
+            <button class="btn" id="nextConvos" style="padding:8px 12px">Next</button>
+          </div>
+        </div>
+      </section>
+
+      <section class="card">
+        <div class="row" style="justify-content:space-between"><h3>Messages</h3><span class="small">From selected transcript</span></div>
+        <div class="list" id="messages"><div class="small">Select a transcript</div></div>
+      </section>
+
+      <section class="card" style="display:grid;grid-template-rows:auto 1fr auto;gap:10px">
+        <div>
+          <div class="row" style="justify-content:space-between"><h3>Memories</h3><div class="row"><input id="qMem" class="input" placeholder="Search…"/><button class="btn" id="searchMem" style="padding:8px 12px">Search</button><div id="spinMem" class="spinner" style="display:none;margin-left:8px"></div></div></div>
+          <div class="list" id="memories" style="margin-top:8px"></div>
+        </div>
+        <div style="border-top:1px solid rgba(0,212,255,.15);padding-top:10px">
+          <div class="row" style="justify-content:space-between"><h3>Actions</h3><button class="btn" id="loadActs" style="padding:8px 12px">Load</button></div>
+          <div class="list" id="actions" style="margin-top:8px"></div>
+          <div id="spinActs" class="spinner" style="display:none;margin-top:8px"></div>
+        </div>
+      </section>
+    </div>
+
+    <div class="footer">SYSTEM VERSION: 4.1.2025 · SESSION: <span id="sessionId">—</span></div>
+  </div>
+
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+<script>
+  // particles
+  (function(){const p=document.getElementById('particles');for(let i=0;i<30;i++){const d=document.createElement('div');d.className='particle';d.style.left=Math.random()*100+'%';d.style.animationDelay=Math.random()*20+'s';d.style.animationDuration=(Math.random()*20+10)+'s';p.appendChild(d)}})();
+
+  // helpers
+  const $=q=>document.querySelector(q); const show=(q,on=true)=>($(q).style.display=on?'':'none'); const text=(q,t)=>($(q).textContent=t); const html=(q,h)=>($(q).innerHTML=h);
+  function toast(msg){const t=$('#toast');t.textContent=msg;t.className='toast show';setTimeout(()=>t.className='toast',2400)}
+  function fmtTime(t){ if(!t) return '—'; const d=new Date(t); return isNaN(d)?'—':d.toLocaleString() }
+  function esc(s){return String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]))}
+
+  // API (server proxy + OMI)
+  class JarvisAPI{
+    constructor(uid, baseUrl){this.uid=uid;this.baseUrl=baseUrl||window.location.origin}
+    // OMI endpoints via your proxy
+    async getOmiConversations(limit=50,cursor){const qs=new URLSearchParams({uid:this.uid,limit:String(limit)});if(cursor)qs.set('cursor',cursor);const r=await fetch(`${this.baseUrl}/api/omi/conversations?${qs}`);if(!r.ok)throw new Error(await r.text());return r.json()}
+    async getOmiConversationMessages(conversationId){const qs=new URLSearchParams({uid:this.uid,conversation_id:conversationId});const r=await fetch(`${this.baseUrl}/api/omi/conversations/messages?${qs}`);if(!r.ok)throw new Error(await r.text());return r.json()}
+    async getOmiMemories(q='',limit=50){const qs=new URLSearchParams({uid:this.uid,q,limit:String(limit)});const r=await fetch(`${this.baseUrl}/api/omi/memories?${qs}`);if(!r.ok)throw new Error(await r.text());return r.json()}
+    async getOmiActions(){const qs=new URLSearchParams({uid:this.uid});const r=await fetch(`${this.baseUrl}/api/omi/actions?${qs}`);if(!r.ok)throw new Error(await r.text());return r.json()}
+  }
+
+  // state
+  const State={api:null,nextCursor:null}
+
+  // renders
+  function renderConversations(payload){const items=Array.isArray(payload)?payload:(payload.items||[]);const next=payload.next_cursor||null; if(!items.length){html('#conversations','<div class="small">No transcripts.</div>');} else {html('#conversations',items.map(it=>`<div class="item" data-id="${it.id||it.conversation_id||''}"><div class="title">${esc(it.title||it.name||'Untitled')}</div><div class="sub">${fmtTime(it.created_at||it.started_at||it.ts)} · ${(it.message_count??it.messages_count??'—')} msg</div><div style="margin-top:6px"><button class="btn" style="padding:6px 10px" data-open>Open</button></div></div>`).join(''))}
+    text('#cursorVal',next||'—'); State.nextCursor=next; document.querySelectorAll('[data-open]').forEach(b=>b.addEventListener('click',async e=>{const id=e.target.closest('.item').dataset.id;await loadMessages(id)}))}
+  function renderMessages(items){ if(!Array.isArray(items)) items=items?.items||[]; if(!items.length){html('#messages','<div class="small">No messages.</div>');return} html('#messages',items.map(m=>`<div class="item"><div class="pill">${esc(m.role||m.speaker||'msg')}</div><div class="title" style="margin-top:6px">${esc((m.text||m.content||m.message||'').split(/\r?\n/)[0]).slice(0,180)}</div><div class="sub">${fmtTime(m.created_at||m.ts)}</div></div>`).join(''))}
+  function renderMemories(items){ if(!Array.isArray(items)) items=items?.items||items?.results||[]; if(!items.length){html('#memories','<div class="small">No memories.</div>');return} html('#memories',items.map(m=>`<div class="item"><div class="title">${esc(m.title||m.key||'Memory')}</div><div class="sub">${esc(m.summary||m.value||m.text||'')}</div></div>`).join(''))}
+  function renderActions(items){ if(!Array.isArray(items)) items=items?.items||[]; if(!items.length){html('#actions','<div class="small">No actions.</div>');return} html('#actions',items.map(a=>`<div class="item"><div class="title">${esc(a.name||a.title||'Action')}</div><div class="sub">${esc(a.description||a.detail||'')}</div></div>`).join(''))}
+
+  // loaders
+  async function connect(){const uid=$('#uid').value.trim();const base=$('#base').value.trim()||undefined;if(!uid){toast('Enter a UID');return} State.api=new JarvisAPI(uid,base); text('#status','◉ CONNECTED'); await Promise.all([loadConversations(),loadMemories(),loadActions()])}
+  async function loadConversations(cursor){try{show('#spinConvos',true);const limit=Number($('#limitConvo').value)||25;const data=await State.api.getOmiConversations(limit,cursor);renderConversations(data)}catch(e){toast(e.message||'Failed conversations')}finally{show('#spinConvos',false)}}
+  async function loadMessages(id){try{const data=await State.api.getOmiConversationMessages(id);renderMessages(data)}catch(e){toast(e.message||'Failed messages')}}
+  async function loadMemories(){try{show('#spinMem',true);const q=$('#qMem').value||'';const data=await State.api.getOmiMemories(q);renderMemories(data)}catch(e){toast(e.message||'Failed memories')}finally{show('#spinMem',false)}}
+  async function loadActions(){try{show('#spinActs',true);const data=await State.api.getOmiActions();renderActions(data)}catch(e){toast(e.message||'Failed actions')}finally{show('#spinActs',false)}}
+
+  // wire buttons
+  $('#connect').addEventListener('click',connect); $('#loadConvos').addEventListener('click',()=>loadConversations()); $('#nextConvos').addEventListener('click',()=> State.nextCursor?loadConversations(State.nextCursor):toast('No next page')); $('#searchMem').addEventListener('click',loadMemories); $('#loadActs').addEventListener('click',loadActions);
+  // top quick buttons (stubs: reuse loaders)
+  $('#btnDaily').addEventListener('click',()=>{toast('Daily Briefing ready');});
+  $('#btnTranscripts').addEventListener('click',()=>{ if(!State.api){toast('Connect with UID');return} loadConversations() });
+  $('#btnActions').addEventListener('click',()=>{ if(!State.api){toast('Connect with UID');return} loadActions() });
+  $('#btnCapture').addEventListener('click',()=>toast('Quick Capture coming soon'));
+  $('#qaTask').addEventListener('click',()=>toast('Add Task'));
+  $('#qaRem').addEventListener('click',()=>toast('Reminder'));
+  $('#qaEvt').addEventListener('click',()=>toast('Event'));
+  $('#qaNote').addEventListener('click',()=>toast('Note'));
+
+  // session
+  text('#sessionId','JARVIS-'+Date.now().toString(36).toUpperCase());
+  // init via query params
+  (function(){const p=new URLSearchParams(location.search);const uid=p.get('uid')||localStorage.getItem('jarvis_uid')||'';const base=p.get('base')||'';if(uid){$('#uid').value=uid;localStorage.setItem('jarvis_uid',uid);connect()} if(base) $('#base').value=base;})()
+</script>
+</body>
+</html>
