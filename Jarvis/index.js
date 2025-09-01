@@ -863,12 +863,8 @@ app.get('/api/insights', security.validateUid, apiLimiter, async (req, res) => {
 });
 
 // Get user's analytics from both jarvis_sessions and frienddb
-app.get('/api/analytics', async (req, res) => {
-    const uid = req.query.uid;
-    
-    if (!uid) {
-        return res.status(400).json({ error: 'UID is required' });
-    }
+app.get('/api/analytics', security.validateUid, async (req, res) => {
+    const uid = req.uid; // Use sanitized UID from middleware
 
     try {
         // Get sessions from jarvis_sessions
@@ -900,8 +896,8 @@ app.get('/api/analytics', async (req, res) => {
 
         res.json(analytics);
     } catch (err) {
-        console.error("Error getting analytics:", err);
-        res.status(500).json({ error: "Failed to get analytics" });
+        const error = security.handleDatabaseError(err, 'fetching analytics');
+        res.status(error.status).json({ error: error.error });
     }
 });
 
@@ -1027,12 +1023,8 @@ app.post('/api/actions', security.validateUid, security.validateAction, async (r
 });
 
 // Get user's actions from frienddb goals field
-app.get('/api/actions', async (req, res) => {
-    const uid = req.query.uid;
-    
-    if (!uid) {
-        return res.status(400).json({ error: 'UID is required' });
-    }
+app.get('/api/actions', security.validateUid, async (req, res) => {
+    const uid = req.uid; // Use sanitized UID from middleware
 
     try {
         const { data: userData } = await supabase
@@ -1047,18 +1039,19 @@ app.get('/api/actions', async (req, res) => {
         
         res.json(goals);
     } catch (err) {
-        console.error("Error fetching actions:", err);
-        res.json([]);
+        const error = security.handleDatabaseError(err, 'fetching actions');
+        res.status(error.status).json({ error: error.error });
     }
 });
 
 // Update action in frienddb goals
-app.put('/api/actions/:id', async (req, res) => {
+app.put('/api/actions/:id', security.validateUid, async (req, res) => {
     const { id } = req.params;
-    const { uid, completed } = req.body;
+    const uid = req.uid; // Use sanitized UID from middleware
+    const { completed } = req.body;
     
-    if (!uid || !id) {
-        return res.status(400).json({ error: 'UID and ID are required' });
+    if (!id) {
+        return res.status(400).json({ error: 'ID is required' });
     }
 
     try {
@@ -1087,18 +1080,18 @@ app.put('/api/actions/:id', async (req, res) => {
             res.status(404).json({ error: 'Action not found' });
         }
     } catch (err) {
-        console.error("Error updating action:", err);
-        res.status(500).json({ error: "Failed to update action" });
+        const error = security.handleDatabaseError(err, 'updating action');
+        res.status(error.status).json({ error: error.error });
     }
 });
 
 // Delete action from frienddb goals
-app.delete('/api/actions/:id', async (req, res) => {
+app.delete('/api/actions/:id', security.validateUid, async (req, res) => {
     const { id } = req.params;
-    const uid = req.query.uid;
+    const uid = req.uid; // Use sanitized UID from middleware
     
-    if (!uid || !id) {
-        return res.status(400).json({ error: 'UID and ID are required' });
+    if (!id) {
+        return res.status(400).json({ error: 'ID is required' });
     }
 
     try {
@@ -1120,8 +1113,8 @@ app.delete('/api/actions/:id', async (req, res) => {
 
         res.json({ success: true });
     } catch (err) {
-        console.error("Error deleting action:", err);
-        res.status(500).json({ error: "Failed to delete action" });
+        const error = security.handleDatabaseError(err, 'deleting action');
+        res.status(error.status).json({ error: error.error });
     }
 });
 
@@ -1164,32 +1157,30 @@ async function setSalutationForUid(uid, salutation) {
 }
 
 // GET /api/preferences?uid=...
-app.get('/api/preferences', async (req, res) => {
+app.get('/api/preferences', security.validateUid, async (req, res) => {
     try {
-        const uid = req.query.uid;
-        if (!uid) {
-            return res.status(400).json({ error: 'UID is required' });
-        }
+        const uid = req.uid; // Use sanitized UID from middleware
         const salutation = await getSalutationForUid(uid);
         res.json({ salutation });
     } catch (err) {
-        console.error("Error in GET preferences:", err);
-        res.status(500).json({ error: 'Failed to load preferences' });
+        const error = security.handleDatabaseError(err, 'loading preferences');
+        res.status(error.status).json({ error: error.error });
     }
 });
 
 // POST /api/preferences { uid, salutation }
-app.post('/api/preferences', async (req, res) => {
+app.post('/api/preferences', security.validateUid, async (req, res) => {
     try {
-        const { uid, salutation } = req.body || {};
-        if (!uid || !salutation) {
-            return res.status(400).json({ error: 'UID and salutation are required' });
+        const uid = req.uid; // Use sanitized UID from middleware
+        const { salutation } = req.body || {};
+        if (!salutation) {
+            return res.status(400).json({ error: 'Salutation is required' });
         }
         const saved = await setSalutationForUid(uid, salutation);
         res.json({ salutation: saved });
     } catch (err) {
-        console.error("Error in POST preferences:", err);
-        res.status(500).json({ error: 'Failed to save preferences' });
+        const error = security.handleDatabaseError(err, 'saving preferences');
+        res.status(error.status).json({ error: error.error });
     }
 });
 
