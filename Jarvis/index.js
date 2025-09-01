@@ -4,6 +4,7 @@ const path = require('path');
 require('dotenv').config();
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
+const security = require('./security-improvements');
 const app = express();
 
 // Behind DigitalOcean/other proxies, trust the proxy to get correct client IPs
@@ -56,7 +57,9 @@ const apiLimiter = rateLimit({
 app.use('/api/', apiLimiter);
 
 // Middleware to parse JSON bodies
-app.use(express.json());
+// Add request size limits (from Brain app)
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ limit: '10mb', extended: true }));
 
 // Serve static files (for CSS, JS if needed)
 app.use(express.static(path.join(__dirname)));
@@ -563,8 +566,8 @@ app.get('/status', async (req, res) => {
 // API Endpoints for Frontend (following Friend/Brain pattern)
 
 // Get user's transcripts from OMI backend (real device memories) or fallback to chat sessions
-app.get('/api/transcripts', async (req, res) => {
-    const uid = req.query.uid;
+app.get('/api/transcripts', security.validateUid, async (req, res) => {
+    const uid = req.uid; // Now sanitized
     
     if (!uid) {
         return res.status(400).json({ error: 'UID is required' });
@@ -636,12 +639,8 @@ app.get('/api/transcripts', async (req, res) => {
 });
 
 // AI-powered Smart Actions endpoint
-app.get('/api/smart-actions', async (req, res) => {
-    const uid = req.query.uid;
-    
-    if (!uid) {
-        return res.status(400).json({ error: 'UID is required' });
-    }
+app.get('/api/smart-actions', security.validateUid, apiLimiter, async (req, res) => {
+    const uid = req.uid; // Now sanitized
 
     try {
         // Get user's actions/goals
@@ -673,17 +672,25 @@ app.get('/api/smart-actions', async (req, res) => {
 
         if (process.env.OPENROUTER_API_KEY) {
             try {
-                const response = await openRouterClient.post('/chat/completions', {
-                    model: 'openai/gpt-3.5-turbo',
-                    messages: [
-                        { role: 'system', content: 'You are an AI task analyzer. Return only valid JSON.' },
-                        { role: 'user', content: analysisPrompt }
-                    ],
-                    temperature: 0.3,
-                    max_tokens: 500
+                const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${process.env.OPENROUTER_API_KEY}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        model: 'openai/gpt-oss-120b:free',
+                        messages: [
+                            { role: 'system', content: 'You are JARVIS, analyzing tasks with precision. Return only valid JSON with strategic insights.' },
+                            { role: 'user', content: analysisPrompt }
+                        ],
+                        temperature: 0.3,
+                        max_tokens: 500
+                    })
                 });
 
-                const content = response.data.choices[0]?.message?.content;
+                const data = await response.json();
+                const content = data.choices?.[0]?.message?.content;
                 if (content) {
                     try {
                         aiAnalysis = JSON.parse(content);
@@ -715,9 +722,9 @@ app.get('/api/smart-actions', async (req, res) => {
             high_priority: highPriority,
             recurring_patterns: [...recurring, ...aiAnalysis.recurring_patterns],
             suggestions: aiAnalysis.suggestions.length > 0 ? aiAnalysis.suggestions : [
-                'Review and organize pending tasks',
-                'Set 3 key goals for today',
-                'Schedule high-priority items first'
+                'Sir, I recommend reviewing and prioritizing your pending operations',
+                'May I suggest establishing three strategic objectives for today',
+                'Critical tasks require immediate scheduling, as you prefer'
             ],
             categorization: aiAnalysis.auto_categorization,
             stats: {
@@ -730,18 +737,14 @@ app.get('/api/smart-actions', async (req, res) => {
             }
         });
     } catch (err) {
-        console.error('Error in smart actions:', err);
-        res.status(500).json({ error: 'Failed to analyze actions' });
+        const error = security.handleDatabaseError(err, 'analyzing actions');
+        res.status(error.status).json({ error: error.error });
     }
 });
 
 // AI-powered Insights endpoint
-app.get('/api/insights', async (req, res) => {
-    const uid = req.query.uid;
-    
-    if (!uid) {
-        return res.status(400).json({ error: 'UID is required' });
-    }
+app.get('/api/insights', security.validateUid, apiLimiter, async (req, res) => {
+    const uid = req.uid; // Now sanitized
 
     try {
         // Get user's actions and sessions
@@ -798,17 +801,25 @@ app.get('/api/insights', async (req, res) => {
                 
                 Provide 3 patterns, 3 recommendations, and 2 productivity tips as JSON.`;
 
-                const response = await openRouterClient.post('/chat/completions', {
-                    model: 'openai/gpt-3.5-turbo',
-                    messages: [
-                        { role: 'system', content: 'You are a productivity analyst. Return only valid JSON with patterns, recommendations, and productivity_tips arrays.' },
-                        { role: 'user', content: insightPrompt }
-                    ],
-                    temperature: 0.5,
-                    max_tokens: 400
+                const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${process.env.OPENROUTER_API_KEY}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        model: 'openai/gpt-oss-120b:free',
+                        messages: [
+                            { role: 'system', content: 'You are JARVIS, providing strategic productivity insights. Analyze patterns like Tony Stark would. Return only valid JSON with patterns, recommendations, and productivity_tips arrays.' },
+                            { role: 'user', content: insightPrompt }
+                        ],
+                        temperature: 0.5,
+                        max_tokens: 400
+                    })
                 });
 
-                const content = response.data.choices[0]?.message?.content;
+                const data = await response.json();
+                const content = data.choices?.[0]?.message?.content;
                 if (content) {
                     try {
                         aiInsights = JSON.parse(content);
@@ -834,9 +845,9 @@ app.get('/api/insights', async (req, res) => {
                 ai_discovered: aiInsights.patterns
             },
             recommendations: aiInsights.recommendations.length > 0 ? aiInsights.recommendations : [
-                busiestDay ? `Schedule important tasks on ${busiestDay[0]}` : 'Track your tasks to discover patterns',
-                peakHour ? `Focus on complex work at ${peakHour[0]}:00` : 'Find your peak productivity hours',
-                'Create templates for recurring tasks'
+                busiestDay ? `Sir, your optimal performance occurs on ${busiestDay[0]}s. I suggest scheduling critical operations accordingly` : 'Shall I begin tracking your patterns for strategic optimization?',
+                peakHour ? `Your cognitive peak is at ${peakHour[0]}:00 hours. Reserve this time for complex problem-solving` : 'I shall identify your peak performance windows, sir',
+                'May I suggest creating automated protocols for your recurring operations?'
             ],
             productivity_tips: aiInsights.productivity_tips,
             stats: {
@@ -846,8 +857,8 @@ app.get('/api/insights', async (req, res) => {
             }
         });
     } catch (err) {
-        console.error('Error generating insights:', err);
-        res.status(500).json({ error: 'Failed to generate insights' });
+        const error = security.handleDatabaseError(err, 'generating insights');
+        res.status(error.status).json({ error: error.error });
     }
 });
 
@@ -895,11 +906,10 @@ app.get('/api/analytics', async (req, res) => {
 });
 
 // Chat: get history
-app.get('/api/chat/history', async (req, res) => {
+app.get('/api/chat/history', security.validateUid, async (req, res) => {
     try {
-        const uid = req.query.uid;
+        const uid = req.uid; // Sanitized
         const sessionId = req.query.session_id;
-        if (!uid) return res.status(400).json({ error: 'UID is required' });
 
         if (!sessionId) {
             // Return most recent CHAT-* session for this UID, if any
@@ -927,10 +937,12 @@ app.get('/api/chat/history', async (req, res) => {
 });
 
 // Chat: send message
-app.post('/api/chat/message', async (req, res) => {
+app.post('/api/chat/message', security.validateUid, security.validateTextInput, apiLimiter, async (req, res) => {
     try {
-        const { uid, session_id, text } = req.body || {};
-        if (!uid || !text) return res.status(400).json({ error: 'UID and text are required' });
+        const uid = req.uid; // Sanitized
+        const text = req.sanitizedText || req.body.text;
+        const { session_id } = req.body || {};
+        if (!text) return res.status(400).json({ error: 'Text is required' });
 
         const sessionId = session_id || newChatSessionId(uid);
         const session = await getOrCreateChatSession(sessionId, uid);
@@ -974,12 +986,10 @@ app.post('/api/chat/message', async (req, res) => {
 });
 
 // Save action to frienddb goals field (reusing Friend's structure)
-app.post('/api/actions', async (req, res) => {
-    const { uid, type, text, date } = req.body;
-    
-    if (!uid || !text) {
-        return res.status(400).json({ error: 'UID and text are required' });
-    }
+app.post('/api/actions', security.validateUid, security.validateAction, async (req, res) => {
+    const uid = req.uid; // Sanitized
+    const { type, text } = req.validatedAction; // Validated
+    const { date } = req.body;
 
     try {
         // Get existing goals from frienddb
