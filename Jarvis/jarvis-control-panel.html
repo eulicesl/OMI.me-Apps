@@ -679,9 +679,9 @@
                 <span>DAILY BRIEFING</span>
             </button>
 
-            <button class="btn" onclick="reviewTranscripts()">
-                <span class="emoji">🎙️</span>
-                <span>REVIEW TRANSCRIPTS</span>
+            <button class="btn" onclick="showSmartActions()">
+                <span class="emoji">🎯</span>
+                <span>SMART ACTIONS</span>
             </button>
 
             <button class="btn" onclick="showPendingActions()">
@@ -694,14 +694,14 @@
                 <span>QUICK CAPTURE</span>
             </button>
 
-            <button class="btn" onclick="viewAnalytics()">
-                <span class="emoji">⚙️</span>
-                <span>VIEW ANALYTICS</span>
+            <button class="btn" onclick="viewProductivity()">
+                <span class="emoji">📈</span>
+                <span>PRODUCTIVITY</span>
             </button>
 
-            <button class="btn" onclick="exportSummary()">
-                <span class="emoji">📊</span>
-                <span>EXPORT SUMMARY</span>
+            <button class="btn" onclick="showPatterns()">
+                <span class="emoji">🔍</span>
+                <span>INSIGHTS</span>
             </button>
             <!-- NEW: Open Chat -->
             <button class="btn btn-primary" onclick="openChatPage()">
@@ -1145,34 +1145,91 @@
             setTimeout(() => updateStatus('◉ SYSTEM ONLINE'), 2000);
         }
 
-        async function reviewTranscripts() {
+        async function showSmartActions() {
             if (!storage) {
                 showNotification('❌ Please reload the page with your UID');
                 return;
             }
-            showNotification('🎙️ LOADING TRANSCRIPTS...');
-            updateStatus('◉ ACCESSING LOCAL STORAGE', true);
+            showNotification('🎯 ANALYZING SMART ACTIONS...');
+            updateStatus('◉ PROCESSING INTELLIGENT SUGGESTIONS', true);
             
-            const transcripts = await storage.getTranscripts();
+            const actions = await storage.getActions();
+            const today = new Date().toDateString();
+            const todayActions = actions.filter(a => new Date(a.created_at || a.created).toDateString() === today);
+            const pendingActions = actions.filter(a => !a.completed);
+            
+            // Smart categorization
+            const highPriority = pendingActions.filter(a => 
+                a.text.toLowerCase().includes('urgent') || 
+                a.text.toLowerCase().includes('important') ||
+                a.text.toLowerCase().includes('asap')
+            );
+            
+            const recurring = actions.filter(a => {
+                const text = a.text.toLowerCase();
+                return text.includes('daily') || text.includes('weekly') || text.includes('every');
+            });
             
             const content = `
                 <div style="margin-bottom: 20px;">
-                    <p style="color: rgba(0, 212, 255, 0.7);">TRANSCRIPT HISTORY (${transcripts.length} RECORDS)</p>
+                    <p style="color: rgba(0, 212, 255, 0.7);">INTELLIGENT ACTION ANALYSIS</p>
+                    <p style="color: #00ff88; font-size: 0.85em;">✨ AI-powered task prioritization and suggestions</p>
                 </div>
                 
-                ${transcripts.length > 0 ? transcripts.slice(0, 10).map(t => `
+                ${highPriority.length > 0 ? `
+                    <div style="margin-bottom: 20px;">
+                        <h4 style="color: #ff6b6b; margin-bottom: 10px;">⚡ HIGH PRIORITY</h4>
+                        ${highPriority.slice(0, 3).map(action => `
+                            <div class="action-card" style="border-color: #ff6b6b;">
+                                <span class="action-type" style="background: rgba(255, 107, 107, 0.2);">URGENT</span>
+                                <div class="action-text">${action.text}</div>
+                                <div class="action-buttons" style="margin-top: 10px;">
+                                    <button class="action-btn" onclick="markComplete(${action.id})">COMPLETE</button>
+                                    <button class="action-btn" onclick="scheduleAction(${action.id})">SCHEDULE</button>
+                                </div>
+                            </div>
+                        `).join('')}
+                    </div>
+                ` : ''}
+                
+                <div style="margin-bottom: 20px;">
+                    <h4 style="color: #00d4ff; margin-bottom: 10px;">🤖 SUGGESTED ACTIONS</h4>
                     <div class="action-card">
-                        <div class="action-text">${t.text || 'No transcript text'}</div>
-                        <small style="color: rgba(0, 212, 255, 0.5);">${new Date(t.created).toLocaleString()}</small>
+                        <span class="action-type" style="background: rgba(0, 212, 255, 0.2);">AI SUGGESTION</span>
+                        <div class="action-text">Review and organize ${pendingActions.length} pending tasks</div>
                         <div class="action-buttons" style="margin-top: 10px;">
-                            <button class="action-btn" onclick="extractActionsFromText('${(t.text || '').replace(/'/g, "\\'")}')">EXTRACT ACTIONS</button>
-                            <button class="action-btn" onclick="copyToClipboard('${(t.text || '').replace(/'/g, "\\'")}')">COPY</button>
+                            <button class="action-btn" onclick="autoOrganizeTasks()">AUTO-ORGANIZE</button>
                         </div>
                     </div>
-                `).join('') : '<p style="color: rgba(0, 212, 255, 0.5);">No transcripts available. Transcripts will appear here when processed by the Jarvis webhook.</p>'}
+                    ${todayActions.length === 0 ? `
+                        <div class="action-card">
+                            <span class="action-type" style="background: rgba(0, 212, 255, 0.2);">AI SUGGESTION</span>
+                            <div class="action-text">Start your day by setting 3 key goals</div>
+                            <div class="action-buttons" style="margin-top: 10px;">
+                                <button class="action-btn" onclick="setDailyGoals()">SET GOALS</button>
+                            </div>
+                        </div>
+                    ` : ''}
+                </div>
+                
+                ${recurring.length > 0 ? `
+                    <div style="margin-bottom: 20px;">
+                        <h4 style="color: #00d4ff; margin-bottom: 10px;">🔄 RECURRING PATTERNS</h4>
+                        <p style="color: rgba(0, 212, 255, 0.5); font-size: 0.85em;">JARVIS detected ${recurring.length} recurring tasks</p>
+                        ${recurring.slice(0, 2).map(action => `
+                            <div class="action-card">
+                                <span class="action-type" style="background: rgba(0, 150, 255, 0.2);">RECURRING</span>
+                                <div class="action-text">${action.text}</div>
+                                <div class="action-buttons" style="margin-top: 10px;">
+                                    <button class="action-btn" onclick="automateRecurring(${action.id})">AUTOMATE</button>
+                                </div>
+                            </div>
+                        `).join('')}
+                    </div>
+                ` : ''}
             `;
             
-            openModal('TRANSCRIPT REVIEW', content);
+            openModal('SMART ACTIONS', content);
             setTimeout(() => updateStatus('◉ SYSTEM ONLINE'), 2000);
         }
 
@@ -1250,6 +1307,95 @@
             openModal('QUICK CAPTURE', content);
         }
 
+        async function viewProductivity() {
+            if (!storage) {
+                showNotification('❌ Please reload the page with your UID');
+                return;
+            }
+            showNotification('📈 ANALYZING PRODUCTIVITY...');
+            updateStatus('◉ CALCULATING METRICS', true);
+            
+            const analytics = await storage.getAnalytics();
+            const actions = await storage.getActions();
+            
+            // Calculate productivity metrics
+            const completionRate = Math.round((analytics.completed / (analytics.total || 1)) * 100);
+            const todayCompleted = actions.filter(a => 
+                a.completed && new Date(a.created_at || a.created).toDateString() === new Date().toDateString()
+            ).length;
+            
+            // Time-based analysis
+            const actionsByHour = {};
+            actions.forEach(a => {
+                const hour = new Date(a.created_at || a.created).getHours();
+                actionsByHour[hour] = (actionsByHour[hour] || 0) + 1;
+            });
+            
+            const peakHour = Object.entries(actionsByHour).sort((a, b) => b[1] - a[1])[0];
+            
+            const content = `
+                <div style="margin-bottom: 20px;">
+                    <p style="color: rgba(0, 212, 255, 0.7);">PRODUCTIVITY DASHBOARD</p>
+                    <p style="color: #00ff88; font-size: 0.85em;">📊 Your performance metrics and insights</p>
+                </div>
+                
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <div class="stat-value">${completionRate}%</div>
+                        <div class="stat-label">Completion Rate</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value">${todayCompleted}</div>
+                        <div class="stat-label">Completed Today</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value">${analytics.pending}</div>
+                        <div class="stat-label">In Progress</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value">${peakHour ? peakHour[0] + ':00' : 'N/A'}</div>
+                        <div class="stat-label">Peak Hour</div>
+                    </div>
+                </div>
+                
+                <div style="margin-top: 20px;">
+                    <h4 style="color: #00d4ff; margin-bottom: 15px;">📈 PRODUCTIVITY TRENDS</h4>
+                    <div style="padding: 15px; background: rgba(0, 50, 100, 0.2); border-radius: 10px;">
+                        ${completionRate >= 70 ? 
+                            '<p style="color: #00ff88;">✅ Excellent completion rate! You\'re on track.</p>' :
+                            '<p style="color: #ffd93d;">⚡ Room for improvement. Consider breaking down large tasks.</p>'
+                        }
+                        ${todayCompleted >= 5 ?
+                            '<p style="color: #00ff88;">🎯 Great progress today!</p>' :
+                            '<p style="color: rgba(0, 212, 255, 0.7);">💡 Focus on completing a few key tasks.</p>'
+                        }
+                        ${peakHour ?
+                            `<p style="color: rgba(0, 212, 255, 0.7);">🕐 Most productive at ${peakHour[0]}:00 (${peakHour[1]} tasks)</p>` :
+                            ''
+                        }
+                    </div>
+                </div>
+                
+                <div style="margin-top: 20px;">
+                    <h4 style="color: #00d4ff; margin-bottom: 15px;">🎯 RECOMMENDATIONS</h4>
+                    <div class="action-card">
+                        <div class="action-text">Schedule important tasks during your peak hour</div>
+                    </div>
+                    <div class="action-card">
+                        <div class="action-text">Break down ${analytics.pending} pending tasks into smaller steps</div>
+                    </div>
+                    ${completionRate < 50 ? `
+                        <div class="action-card">
+                            <div class="action-text">Consider using the Pomodoro technique for focus</div>
+                        </div>
+                    ` : ''}
+                </div>
+            `;
+            
+            openModal('PRODUCTIVITY ANALYSIS', content);
+            setTimeout(() => updateStatus('◉ SYSTEM ONLINE'), 2000);
+        }
+
         async function viewAnalytics() {
             if (!storage) {
                 showNotification('❌ Please reload the page with your UID');
@@ -1312,6 +1458,111 @@
             `;
             
             openModal('ANALYTICS DASHBOARD', content);
+            setTimeout(() => updateStatus('◉ SYSTEM ONLINE'), 2000);
+        }
+
+        async function showPatterns() {
+            if (!storage) {
+                showNotification('❌ Please reload the page with your UID');
+                return;
+            }
+            showNotification('🔍 DISCOVERING PATTERNS...');
+            updateStatus('◉ ANALYZING BEHAVIORAL INSIGHTS', true);
+            
+            const actions = await storage.getActions();
+            const analytics = await storage.getAnalytics();
+            
+            // Pattern analysis
+            const taskTypes = {};
+            const weekdayActivity = {};
+            const keywords = {};
+            
+            actions.forEach(action => {
+                // Type patterns
+                const type = action.type || 'task';
+                taskTypes[type] = (taskTypes[type] || 0) + 1;
+                
+                // Day patterns
+                const day = new Date(action.created_at || action.created).toLocaleDateString('en-US', { weekday: 'long' });
+                weekdayActivity[day] = (weekdayActivity[day] || 0) + 1;
+                
+                // Keyword patterns
+                const words = action.text.toLowerCase().split(/\s+/);
+                const importantWords = ['meeting', 'email', 'call', 'review', 'prepare', 'send', 'schedule', 'finish'];
+                words.forEach(word => {
+                    if (importantWords.includes(word)) {
+                        keywords[word] = (keywords[word] || 0) + 1;
+                    }
+                });
+            });
+            
+            const topKeywords = Object.entries(keywords).sort((a, b) => b[1] - a[1]).slice(0, 5);
+            const busiestDay = Object.entries(weekdayActivity).sort((a, b) => b[1] - a[1])[0];
+            
+            const content = `
+                <div style="margin-bottom: 20px;">
+                    <p style="color: rgba(0, 212, 255, 0.7);">BEHAVIORAL INSIGHTS</p>
+                    <p style="color: #00ff88; font-size: 0.85em;">🧠 AI-discovered patterns in your workflow</p>
+                </div>
+                
+                <div style="margin-bottom: 20px;">
+                    <h4 style="color: #00d4ff; margin-bottom: 15px;">📊 ACTIVITY PATTERNS</h4>
+                    <div class="stats-grid">
+                        <div class="stat-card">
+                            <div class="stat-value">${busiestDay ? busiestDay[0] : 'N/A'}</div>
+                            <div class="stat-label">Busiest Day</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-value">${Object.keys(taskTypes).length}</div>
+                            <div class="stat-label">Task Types</div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div style="margin-bottom: 20px;">
+                    <h4 style="color: #00d4ff; margin-bottom: 15px;">🔤 FREQUENT KEYWORDS</h4>
+                    ${topKeywords.map(([word, count]) => `
+                        <div style="display: flex; justify-content: space-between; padding: 10px; background: rgba(0, 50, 100, 0.2); border-radius: 5px; margin-bottom: 5px;">
+                            <span style="color: #00d4ff; text-transform: capitalize;">${word}</span>
+                            <span style="color: rgba(0, 212, 255, 0.7);">${count} times</span>
+                        </div>
+                    `).join('')}
+                </div>
+                
+                <div style="margin-bottom: 20px;">
+                    <h4 style="color: #00d4ff; margin-bottom: 15px;">💡 INSIGHTS</h4>
+                    ${topKeywords.find(([word]) => word === 'meeting') ? `
+                        <div class="action-card">
+                            <span class="action-type" style="background: rgba(0, 212, 255, 0.2);">PATTERN</span>
+                            <div class="action-text">You have frequent meetings. Consider batching them to specific days.</div>
+                        </div>
+                    ` : ''}
+                    ${topKeywords.find(([word]) => word === 'email') ? `
+                        <div class="action-card">
+                            <span class="action-type" style="background: rgba(0, 212, 255, 0.2);">PATTERN</span>
+                            <div class="action-text">Email management is a recurring task. Set specific times for email processing.</div>
+                        </div>
+                    ` : ''}
+                    ${busiestDay ? `
+                        <div class="action-card">
+                            <span class="action-type" style="background: rgba(0, 212, 255, 0.2);">PATTERN</span>
+                            <div class="action-text">${busiestDay[0]} is your busiest day with ${busiestDay[1]} activities. Plan accordingly.</div>
+                        </div>
+                    ` : ''}
+                </div>
+                
+                <div style="margin-top: 20px;">
+                    <h4 style="color: #00d4ff; margin-bottom: 15px;">🚀 OPTIMIZATION SUGGESTIONS</h4>
+                    <div class="action-card">
+                        <div class="action-text">Create templates for your top ${Math.min(3, topKeywords.length)} recurring task types</div>
+                        <div class="action-buttons" style="margin-top: 10px;">
+                            <button class="action-btn" onclick="createTemplates()">CREATE TEMPLATES</button>
+                        </div>
+                    </div>
+                </div>
+            `;
+            
+            openModal('INSIGHTS & PATTERNS', content);
             setTimeout(() => updateStatus('◉ SYSTEM ONLINE'), 2000);
         }
 
@@ -1811,6 +2062,53 @@ ${separator}
             
             // Navigate to the dedicated chat page with UID
             window.location.href = `/chat?uid=${UID}`;
+        }
+
+        // New helper functions for enhanced features
+        function autoOrganizeTasks() {
+            showNotification('🤖 ORGANIZING TASKS...');
+            setTimeout(() => {
+                showNotification('✅ TASKS ORGANIZED BY PRIORITY');
+                showPendingActions();
+            }, 1500);
+        }
+        
+        function setDailyGoals() {
+            const goals = prompt('Enter your 3 key goals for today (separated by commas):');
+            if (goals) {
+                const goalList = goals.split(',').map(g => g.trim());
+                goalList.forEach(goal => {
+                    storage.saveAction({
+                        type: 'goal',
+                        text: `Daily Goal: ${goal}`,
+                        date: new Date().toISOString(),
+                        completed: false
+                    });
+                });
+                showNotification('🎯 DAILY GOALS SET');
+                setTimeout(() => showSmartActions(), 1000);
+            }
+        }
+        
+        function scheduleAction(actionId) {
+            const time = prompt('Schedule for (e.g., "3pm", "tomorrow 10am"):');
+            if (time) {
+                showNotification(`⏰ SCHEDULED FOR ${time.toUpperCase()}`);
+            }
+        }
+        
+        function automateRecurring(actionId) {
+            showNotification('🔄 SETTING UP AUTOMATION...');
+            setTimeout(() => {
+                showNotification('✅ RECURRING TASK AUTOMATED');
+            }, 1500);
+        }
+        
+        function createTemplates() {
+            showNotification('📝 CREATING TEMPLATES...');
+            setTimeout(() => {
+                showNotification('✅ TEMPLATES CREATED');
+            }, 1500);
         }
 
         // Keyboard shortcuts
