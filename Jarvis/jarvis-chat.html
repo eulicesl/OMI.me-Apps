@@ -125,7 +125,7 @@
             border: 1px solid rgba(0, 212, 255, 0.15);
             border-radius: 12px;
             padding: 15px;
-            padding-bottom: 20px; /* Extra padding at bottom */
+            padding-bottom: 48px; /* Extra padding at bottom to avoid overlay with jump button */
             overflow-y: auto;
             overflow-x: hidden;
             /* Smooth, native momentum scrolling on mobile */
@@ -135,8 +135,47 @@
             margin-bottom: 15px;
             box-shadow: inset 0 0 15px rgba(0, 212, 255, 0.05);
             min-height: 0; /* Critical for proper scrolling in flexbox */
+            position: relative; /* Anchor for jump-to-latest button */
             display: flex;
             flex-direction: column;
+        }
+
+        /* Floating jump-to-latest button (ChatGPT-like) */
+        .jump-to-latest {
+            display: none;
+            position: fixed;
+            right: 24px;
+            /* Keep above input; account for safe-area on mobile */
+            bottom: calc(88px + env(safe-area-inset-bottom));
+            z-index: 1000;
+            padding: 10px 14px;
+            background: rgba(0, 212, 255, 0.15);
+            border: 1px solid rgba(0, 212, 255, 0.35);
+            color: #00d4ff;
+            border-radius: 999px;
+            font-family: 'Orbitron', monospace;
+            font-size: 12px;
+            letter-spacing: 0.5px;
+            -webkit-backdrop-filter: blur(6px);
+            backdrop-filter: blur(6px);
+            cursor: pointer;
+            box-shadow: 0 4px 20px rgba(0, 212, 255, 0.25);
+            transition: transform 0.15s ease, box-shadow 0.15s ease, background 0.2s ease;
+        }
+
+        .jump-to-latest:hover {
+            transform: translateY(-1px);
+            background: rgba(0, 212, 255, 0.25);
+            box-shadow: 0 6px 24px rgba(0, 212, 255, 0.35);
+        }
+
+        @media (max-width: 768px) {
+            .jump-to-latest {
+                right: 12px;
+                bottom: calc(74px + env(safe-area-inset-bottom));
+                padding: 10px 12px;
+                font-size: 12px;
+            }
         }
 
         .messages-container::-webkit-scrollbar {
@@ -173,8 +212,7 @@
 
         .message-bubble {
             display: inline-block;
-            max-width: 65%;
-            min-width: fit-content;
+            max-width: 100%; /* Base; constrained by role-specific rules below */
             padding: 8px 12px;
             border-radius: 16px;
             line-height: 1.4;
@@ -194,6 +232,8 @@
             border: 1px solid rgba(0, 255, 200, 0.35);
             color: #00ffcc;
             border-bottom-right-radius: 4px;
+            /* ChatGPT-like content width for user messages */
+            max-width: min(560px, 85%);
         }
 
         .message.assistant .message-bubble {
@@ -201,6 +241,8 @@
             border: 1px solid rgba(0, 212, 255, 0.35);
             color: #00d4ff;
             border-bottom-left-radius: 4px;
+            /* ChatGPT-like content width for assistant messages */
+            max-width: min(720px, 92%);
         }
 
 
@@ -341,9 +383,9 @@
                 font-size: 18px;
             }
             
-            .message-bubble {
-                max-width: 85%;
-            }
+            /* On small screens, rely on percentage widths */
+            .message.assistant .message-bubble { max-width: 92%; }
+            .message.user .message-bubble { max-width: 85%; }
             
             .chat-input {
                 font-size: 16px;
@@ -460,6 +502,7 @@
             />
             <button class="send-btn" id="sendBtn">SEND</button>
         </div>
+        <button class="jump-to-latest" id="jumpToLatest" type="button" aria-label="Jump to latest">LATEST ↓</button>
     </div>
 
     <script>
@@ -533,6 +576,7 @@
         const typingIndicator = document.getElementById('typingIndicator');
         const statusIndicator = document.getElementById('statusIndicator');
         const welcomeMessage = document.getElementById('welcomeMessage');
+        const jumpToLatest = document.getElementById('jumpToLatest');
 
         // Format time
         function formatTime(timestamp) {
@@ -551,11 +595,26 @@
             });
         }
 
+        // Near-bottom detection similar to ChatGPT behavior
+        function isNearBottom() {
+            return (messagesContainer.scrollHeight - messagesContainer.scrollTop - messagesContainer.clientHeight) < 100;
+        }
+
+        function toggleJumpToLatest() {
+            jumpToLatest.style.display = isNearBottom() ? 'none' : 'inline-flex';
+        }
+
+        function maybeScrollToBottom(force = false) {
+            if (force || isNearBottom()) {
+                scrollToBottom();
+            }
+            toggleJumpToLatest();
+        }
+
         // Render messages
         function renderMessages(messages) {
             if (messages && messages.length > 0) {
                 welcomeMessage.style.display = 'none';
-                const nearBottom = (messagesContainer.scrollHeight - messagesContainer.scrollTop - messagesContainer.clientHeight) < 100;
                 messagesContainer.innerHTML = messages.map(msg => {
                     const type = msg.is_user ? 'user' : 'assistant';
                     const time = formatTime(msg.timestamp);
@@ -570,8 +629,8 @@
                         </div>
                     `;
                 }).join('');
-                // Always scroll to bottom after rendering
-                scrollToBottom();
+                // Scroll only if the viewer is near bottom
+                maybeScrollToBottom(false);
             }
         }
 
@@ -605,7 +664,6 @@
             welcomeMessage.style.display = 'none';
             const type = isUser ? 'user' : 'assistant';
             const time = formatTime(Date.now() / 1000);
-            const nearBottom = (messagesContainer.scrollHeight - messagesContainer.scrollTop - messagesContainer.clientHeight) < 100;
             const messageHtml = `
                 <div class="message ${type}">
                     <div class="message-wrapper">
@@ -617,8 +675,8 @@
                 </div>
             `;
             messagesContainer.insertAdjacentHTML('beforeend', messageHtml);
-            // Always scroll to bottom after adding a message
-            scrollToBottom();
+            // Force scroll for user's own messages; otherwise respect viewer position
+            maybeScrollToBottom(!!isUser);
         }
 
         // Update status
@@ -646,7 +704,7 @@
             // Show typing indicator
             typingIndicator.classList.add('show');
             messagesContainer.appendChild(typingIndicator);
-            scrollToBottom();
+            maybeScrollToBottom(false);
             
             updateStatus('◉ PROCESSING', true);
 
@@ -686,9 +744,26 @@
             }
             updateStatus('◉ ONLINE');
             chatInput.focus();
+            toggleJumpToLatest();
         }
 
         init();
+
+        // Scroll handler (throttled with rAF) to toggle jump-to-latest visibility
+        let scrollRaf = null;
+        messagesContainer.addEventListener('scroll', () => {
+            if (scrollRaf) return;
+            scrollRaf = requestAnimationFrame(() => {
+                toggleJumpToLatest();
+                scrollRaf = null;
+            });
+        });
+
+        // Jump to latest on click
+        jumpToLatest.addEventListener('click', () => {
+            scrollToBottom();
+            toggleJumpToLatest();
+        });
     </script>
 </body>
 </html>
