@@ -53,10 +53,10 @@
         .header {
             background: linear-gradient(135deg, rgba(0, 30, 60, 0.9) 0%, rgba(0, 50, 100, 0.7) 100%);
             border-bottom: 2px solid rgba(0, 212, 255, 0.3);
-            padding: 20px;
+            padding: 12px 20px;
             display: flex;
             align-items: center;
-            gap: 20px;
+            gap: 16px;
             box-shadow: 0 4px 20px rgba(0, 212, 255, 0.3);
             flex-shrink: 0;
         }
@@ -85,12 +85,33 @@
 
         .header-title {
             flex: 1;
-            text-align: center;
-            font-size: 24px;
+            text-align: left;
+            font-size: 20px;
             font-weight: 700;
             text-shadow: 0 0 20px rgba(0, 212, 255, 0.8);
             letter-spacing: 2px;
         }
+
+        .header-actions {
+            display: inline-flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .new-chat-btn, .session-select {
+            background: rgba(0, 212, 255, 0.1);
+            border: 1px solid rgba(0, 212, 255, 0.35);
+            color: #00d4ff;
+            border-radius: 10px;
+            font-family: 'Orbitron', monospace;
+            font-size: 12px;
+            letter-spacing: 0.5px;
+            padding: 10px 12px;
+        }
+
+        .new-chat-btn { cursor: pointer; }
+
+        .session-select { appearance: none; }
 
         .status-indicator {
             padding: 8px 16px;
@@ -113,7 +134,7 @@
             display: flex;
             flex-direction: column;
             width: 100%;
-            padding: 20px;
+            padding: 12px 16px; /* tighter to maximize usable area */
             overflow: hidden;
             min-height: 0; /* Critical for flexbox children to scroll */
         }
@@ -232,7 +253,7 @@
             border: 1px solid rgba(0, 255, 200, 0.35);
             color: #00ffcc;
             border-bottom-right-radius: 4px;
-            /* ChatGPT-like content width for user messages */
+            /* Standard chat width similar to ChatGPT */
             max-width: min(560px, 85%);
         }
 
@@ -241,7 +262,7 @@
             border: 1px solid rgba(0, 212, 255, 0.35);
             color: #00d4ff;
             border-bottom-left-radius: 4px;
-            /* ChatGPT-like content width for assistant messages */
+            /* Standard chat width similar to ChatGPT */
             max-width: min(720px, 92%);
         }
 
@@ -379,9 +400,9 @@
 
         /* Responsive design */
         @media (max-width: 768px) {
-            .header-title {
-                font-size: 18px;
-            }
+            .header-title { font-size: 16px; }
+            .header-actions { gap: 8px; }
+            .new-chat-btn, .session-select { font-size: 12px; padding: 8px 10px; }
             
             /* On small screens, rely on percentage widths */
             .message.assistant .message-bubble { max-width: 92%; }
@@ -465,8 +486,14 @@
             <span>←</span>
             <span>BACK</span>
         </a>
-        <div class="header-title">J.A.R.V.I.S. CHAT INTERFACE</div>
-        <div class="status-indicator" id="statusIndicator">◉ ONLINE</div>
+        <div class="header-title">CHAT</div>
+        <div class="header-actions">
+            <select class="session-select" id="sessionSelect" aria-label="Select chat session">
+                <option value="">CURRENT SESSION</option>
+            </select>
+            <button class="new-chat-btn" id="newChatBtn" type="button">NEW CHAT</button>
+            <div class="status-indicator" id="statusIndicator">◉ ONLINE</div>
+        </div>
     </div>
 
     <div class="chat-container">
@@ -528,8 +555,9 @@
             return sid;
         }
 
-        const sessionId = getChatSessionId();
+        let sessionId = getChatSessionId();
         let isProcessing = false;
+        let knownSessions = [];
 
         // API class
         class ChatAPI {
@@ -577,6 +605,8 @@
         const statusIndicator = document.getElementById('statusIndicator');
         const welcomeMessage = document.getElementById('welcomeMessage');
         const jumpToLatest = document.getElementById('jumpToLatest');
+        const sessionSelect = document.getElementById('sessionSelect');
+        const newChatBtn = document.getElementById('newChatBtn');
 
         // Format time
         function formatTime(timestamp) {
@@ -609,6 +639,54 @@
                 scrollToBottom();
             }
             toggleJumpToLatest();
+        }
+
+        // Session management
+        async function loadSessionsList() {
+            try {
+                const res = await fetch(`${window.location.origin}/api/transcripts?uid=${UID}`);
+                if (!res.ok) throw new Error('Failed to load sessions');
+                const transcripts = await res.json();
+                knownSessions = transcripts || [];
+                // Populate select options
+                const current = sessionId;
+                sessionSelect.innerHTML = `<option value="${current}">CURRENT SESSION</option>` +
+                    knownSessions.map(t => {
+                        const sid = t.session_id || '';
+                        const labelTime = new Date(t.created || Date.now()).toLocaleString();
+                        const label = sid ? `${sid.slice(0, 8)}… • ${labelTime}` : labelTime;
+                        return `<option value="${sid}">${label}</option>`;
+                    }).join('');
+            } catch (e) {
+                console.error('Error loading sessions list', e);
+            }
+        }
+
+        async function switchSession(id) {
+            if (!id || id === sessionId) return;
+            sessionId = id;
+            localStorage.setItem(`jarvis_chat_session_${UID}`, sessionId);
+            updateStatus('◉ LOADING SESSION', true);
+            const history = await api.getHistory(sessionId);
+            messagesContainer.innerHTML = '';
+            if (history?.messages?.length > 0) {
+                renderMessages(history.messages);
+            } else {
+                welcomeMessage.style.display = 'block';
+            }
+            updateStatus('◉ ONLINE');
+            maybeScrollToBottom(true);
+        }
+
+        function createNewSession() {
+            const newId = `CHAT-${UID}-${Date.now().toString(36).toUpperCase()}`;
+            sessionId = newId;
+            localStorage.setItem(`jarvis_chat_session_${UID}`, sessionId);
+            messagesContainer.innerHTML = '';
+            welcomeMessage.style.display = 'block';
+            sessionSelect.value = '';
+            updateStatus('◉ NEW SESSION');
+            maybeScrollToBottom(true);
         }
 
         // Render messages
@@ -735,6 +813,13 @@
             }
         });
 
+        sessionSelect.addEventListener('change', (e) => {
+            const id = e.target.value;
+            if (id) switchSession(id);
+        });
+
+        newChatBtn.addEventListener('click', createNewSession);
+
         // Load history on page load
         async function init() {
             updateStatus('◉ LOADING', true);
@@ -745,6 +830,7 @@
             updateStatus('◉ ONLINE');
             chatInput.focus();
             toggleJumpToLatest();
+            loadSessionsList();
         }
 
         init();
