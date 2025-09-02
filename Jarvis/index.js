@@ -388,12 +388,9 @@ async function generateAssistantReply(messages, uid) {
             if (response.ok) {
                 const data = await response.json();
                 let content = data.choices?.[0]?.message?.content || `As you wish, ${salutation}.`;
-                // Clean up any markup tokens and markdown from the model
+                // Only clean up markup tokens, preserve markdown
                 content = content.replace(/<\|[^>]*\|>/g, '');
-                content = content.replace(/#{1,6}\s*/g, ''); // Remove markdown headers
-                content = content.replace(/\*{1,3}([^*]+)\*{1,3}/g, '$1'); // Remove bold/italic
-                content = content.replace(/\s+/g, ' ').trim();
-                return content;
+                return content.trim();
             }
         } catch (err) {
             console.error('OpenRouter error:', err);
