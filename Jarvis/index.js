@@ -369,7 +369,7 @@ async function generateAssistantReply(messages, uid) {
                     'X-Title': OPENROUTER_TITLE
                 },
                 body: JSON.stringify(maybeAttachTools({
-                    model: 'openai/gpt-oss-120b:free',  // Using the requested 120B model
+                    model: 'openai/gpt-4o-mini',  // Using GPT-4o-mini model
                     messages: [
                         { role: 'system', content: buildJarvisSystemPrompt(salutation) },
                         ...messages.slice(-10).map(m => ({
@@ -685,7 +685,7 @@ app.get('/api/smart-actions', security.validateUid, apiLimiter, async (req, res)
                         'Content-Type': 'application/json'
                     },
                     body: JSON.stringify({
-                        model: 'openai/gpt-oss-120b:free',
+                        model: 'openai/gpt-4o-mini',
                         messages: [
                             { role: 'system', content: 'You are JARVIS, analyzing tasks with precision. Return only valid JSON with strategic insights.' },
                             { role: 'user', content: analysisPrompt }
@@ -814,7 +814,7 @@ app.get('/api/insights', security.validateUid, apiLimiter, async (req, res) => {
                         'Content-Type': 'application/json'
                     },
                     body: JSON.stringify({
-                        model: 'openai/gpt-oss-120b:free',
+                        model: 'openai/gpt-4o-mini',
                         messages: [
                             { role: 'system', content: 'You are JARVIS, providing strategic productivity insights. Analyze patterns like Tony Stark would. Return only valid JSON with patterns, recommendations, and productivity_tips arrays.' },
                             { role: 'user', content: insightPrompt }
