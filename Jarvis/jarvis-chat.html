@@ -230,12 +230,14 @@
             will-change: transform;
         }
         
-        /* Message bubbles */
+        /* Message bubbles - column stack layout */
         .message {
-            margin: 10px 0;
             display: flex;
+            flex-direction: column;
+            align-items: flex-start;  /* default left alignment */
+            gap: 6px;
+            margin: 12px 0;
             animation: fadeIn 0.3s;
-            align-items: flex-start;
         }
 
         @keyframes fadeIn {
@@ -244,18 +246,14 @@
         }
 
         .message.user {
-            justify-content: flex-end;
-            padding-right: 10px;
+            align-items: flex-end;  /* right-align user stack */
         }
 
         .message.assistant {
-            justify-content: flex-start;
-            padding-left: 10px;
+            align-items: flex-start;  /* left-align assistant stack */
         }
 
-        .message-wrapper {
-            display: contents;
-        }
+        /* Remove wrapper - no longer needed */
 
         .message-bubble {
             display: inline-block;
@@ -484,6 +482,55 @@
             text-shadow: 0 0 20px rgba(0, 212, 255, 0.5);
         }
 
+        /* === Compact bubble fix === */
+        
+        /* Don't preserve extra newlines by default */
+        .message-bubble { 
+            white-space: normal; 
+            line-height: 1.5; 
+            padding: 10px 12px; 
+        }
+        
+        /* Kill default block margins; add spacing only between siblings */
+        .message-bubble p,
+        .message-bubble ul,
+        .message-bubble ol,
+        .message-bubble pre,
+        .message-bubble blockquote,
+        .message-bubble h1,
+        .message-bubble h2,
+        .message-bubble h3,
+        .message-bubble h4 { 
+            margin: 0; 
+        }
+        
+        .message-bubble > * + * { 
+            margin-top: 0.35rem; 
+        } /* spacing only between elements */
+        
+        /* Lists a bit tighter */
+        .message-bubble ul,
+        .message-bubble ol { 
+            padding-left: 1.1rem; 
+        }
+        
+        /* Code blocks compact */
+        .message-bubble pre { 
+            padding: 8px 10px; 
+            border-radius: 8px; 
+        }
+        
+        /* Optional: ensure tiny replies don't look boxy */
+        .message-bubble { 
+            min-height: 0; 
+            min-width: 40px; 
+        }
+        
+        /* Timestamp a touch closer */
+        .message-time { 
+            margin-top: 4px; 
+        }
+        
         /* Responsive design */
         @media (max-width: 768px) {
             .header-title { font-size: 16px; display: none; }
@@ -615,13 +662,11 @@
 
         <div class="typing-indicator" id="typingIndicator">
             <div class="message assistant">
-                <div class="message-wrapper">
-                    <div class="message-bubble">
-                        <div class="typing-dots">
-                            <span></span>
-                            <span></span>
-                            <span></span>
-                        </div>
+                <div class="message-bubble">
+                    <div class="typing-dots">
+                        <span></span>
+                        <span></span>
+                        <span></span>
                     </div>
                 </div>
             </div>
@@ -643,6 +688,17 @@
     <div id="announce" aria-live="assertive" class="sr-only"></div>
 
     <script>
+        // Configure marked.js to avoid paragraph wrappers for single lines
+        if (window.marked) {
+            const renderer = new marked.Renderer();
+            const originalParagraph = renderer.paragraph.bind(renderer);
+            renderer.paragraph = (text) => {
+                // Single line without newlines => no <p> wrapper
+                return text.trim().includes('\n') ? originalParagraph(text) : text;
+            };
+            marked.use({ renderer });
+        }
+        
         // Get UID from URL params
         const urlParams = new URLSearchParams(window.location.search);
         const UID = urlParams.get('uid');
@@ -813,12 +869,10 @@
                         : escapeHtml(cleanText);
                     return `
                         <div class="message ${type}">
-                            <div class="message-wrapper">
-                                <div class="message-bubble">
-                                    <div class="message-content">${content}</div>
-                                </div>
-                                <div class="message-time">${time}</div>
+                            <div class="message-bubble">
+                                <div class="message-content">${content}</div>
                             </div>
+                            <div class="message-time">${time}</div>
                         </div>
                     `;
                 }).join('');
@@ -864,12 +918,10 @@
                 : escapeHtml(cleanText);
             const messageHtml = `
                 <div class="message ${type}">
-                    <div class="message-wrapper">
-                        <div class="message-bubble">
-                            <div class="message-content">${content}</div>
-                        </div>
-                        <div class="message-time">${time}</div>
+                    <div class="message-bubble">
+                        <div class="message-content">${content}</div>
                     </div>
+                    <div class="message-time">${time}</div>
                 </div>
             `;
             messagesContainer.insertAdjacentHTML('beforeend', messageHtml);
