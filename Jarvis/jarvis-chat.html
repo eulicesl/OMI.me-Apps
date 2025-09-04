@@ -725,7 +725,7 @@
         let isProcessing = false;
         let knownSessions = [];
 
-        // API class
+        // API class with better iOS error handling
         class ChatAPI {
             constructor(uid) {
                 this.uid = uid;
@@ -735,29 +735,46 @@
             async getHistory(sessionId) {
                 try {
                     const res = await fetch(`${this.baseUrl}/api/chat/history?uid=${this.uid}&session_id=${sessionId}`);
-                    if (!res.ok) throw new Error('Failed to fetch history');
+                    if (!res.ok) throw new Error(`Failed to fetch history: ${res.status}`);
                     return await res.json();
                 } catch (err) {
                     console.error('Error fetching history:', err);
+                    // iOS Safari debugging
+                    if (window.webkit?.messageHandlers) {
+                        console.log('iOS Safari detected, error:', err.message);
+                    }
                     return { messages: [] };
                 }
             }
 
             async sendMessage(sessionId, text) {
                 try {
+                    console.log('Sending message:', { uid: this.uid, session_id: sessionId, text: text.substring(0, 50) });
                     const res = await fetch(`${this.baseUrl}/api/chat/message`, {
                         method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
+                        headers: { 
+                            'Content-Type': 'application/json',
+                            'Accept': 'application/json'
+                        },
                         body: JSON.stringify({
                             uid: this.uid,
                             session_id: sessionId,
                             text
                         })
                     });
-                    if (!res.ok) throw new Error('Failed to send message');
-                    return await res.json();
+                    if (!res.ok) {
+                        const errorText = await res.text();
+                        throw new Error(`Failed to send message: ${res.status} - ${errorText}`);
+                    }
+                    const data = await res.json();
+                    console.log('Received response with', data.messages?.length, 'messages');
+                    return data;
                 } catch (err) {
                     console.error('Error sending message:', err);
+                    // iOS Safari debugging
+                    if (window.webkit?.messageHandlers) {
+                        console.log('iOS Safari error details:', err.message);
+                    }
                     return null;
                 }
             }
@@ -963,10 +980,19 @@
             // Hide typing indicator
             typingIndicator.classList.remove('show');
             
-            if (result?.messages) {
-                // Render all messages (includes the assistant's response)
-                renderMessages(result.messages);
+            if (result?.messages && result.messages.length > 0) {
+                // On iOS, we need to be more careful about re-rendering
+                // Find the assistant's response (last non-user message)
+                const assistantMsg = result.messages.filter(m => !m.is_user).pop();
+                if (assistantMsg) {
+                    // Add only the assistant's response instead of re-rendering all
+                    addMessage(assistantMsg.text, false);
+                } else {
+                    // Fallback: re-render all messages
+                    renderMessages(result.messages);
+                }
             } else {
+                console.error('API response issue:', result);
                 addMessage('⚠️ Network error. Message not sent. Please try again.', false);
                 const announce = document.getElementById('announce');
                 if (announce) announce.textContent = 'Message failed to send';
@@ -974,7 +1000,12 @@
             
             updateStatus('◉ ONLINE');
             isProcessing = false;
-            chatInput.focus();
+            // iOS Safari needs a delay before refocusing
+            setTimeout(() => {
+                if (!(/iPhone|iPad|iPod/.test(navigator.userAgent))) {
+                    chatInput.focus();
+                }
+            }, 100);
         }
 
         // Event listeners
