@@ -1,0 +1,984 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>OMI Integration Settings - JARVIS</title>
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;700&family=Roboto:wght@400;500&display=swap" rel="stylesheet">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Roboto', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: linear-gradient(135deg, #000000 0%, #001a33 100%);
+            color: #00d4ff;
+            margin: 0;
+            padding: 0;
+            height: 100vh;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            -webkit-font-smoothing: antialiased;
+            text-rendering: optimizeLegibility;
+        }
+        
+        @supports (height: 100svh) {
+            body { height: 100svh; }
+        }
+
+        /* Animated background grid - matching JARVIS */
+        body::before {
+            content: '';
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-image: 
+                linear-gradient(rgba(0, 212, 255, 0.03) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(0, 212, 255, 0.03) 1px, transparent 1px);
+            background-size: 50px 50px;
+            animation: grid-move 10s linear infinite;
+            z-index: -1;
+            pointer-events: none;
+        }
+
+        @keyframes grid-move {
+            0% { transform: translate(0, 0); }
+            100% { transform: translate(50px, 50px); }
+        }
+
+        /* Header - matching JARVIS chat */
+        .header {
+            background: linear-gradient(135deg, rgba(0, 30, 60, 0.9) 0%, rgba(0, 50, 100, 0.7) 100%);
+            border-bottom: 2px solid rgba(0, 212, 255, 0.3);
+            padding: calc(12px + env(safe-area-inset-top)) 20px 12px;
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            box-shadow: 0 4px 20px rgba(0, 212, 255, 0.3);
+            flex-shrink: 0;
+        }
+
+        .header-title {
+            flex: 1;
+            text-align: center;
+            font-size: 20px;
+            font-weight: 700;
+            text-shadow: 0 0 20px rgba(0, 212, 255, 0.8);
+            letter-spacing: 2px;
+            font-family: 'Orbitron', monospace;
+        }
+
+        .container {
+            flex: 1;
+            overflow-y: auto;
+            padding: 20px;
+            max-width: 600px;
+            margin: 0 auto;
+            width: 100%;
+            box-sizing: border-box;
+        }
+
+        .settings-card {
+            background: rgba(0, 30, 60, 0.6);
+            backdrop-filter: blur(10px);
+            border-radius: 20px;
+            padding: 30px;
+            box-shadow: 0 10px 40px rgba(0, 212, 255, 0.1);
+            border: 1px solid rgba(0, 212, 255, 0.2);
+        }
+
+        h1 {
+            color: #00d4ff;
+            margin-bottom: 10px;
+            font-size: 24px;
+            text-align: center;
+            font-family: 'Orbitron', monospace;
+            font-weight: 700;
+            text-shadow: 0 0 20px rgba(0, 212, 255, 0.8);
+            letter-spacing: 2px;
+        }
+
+        .subtitle {
+            text-align: center;
+            color: rgba(255, 255, 255, 0.6);
+            margin-bottom: 30px;
+            font-size: 14px;
+        }
+
+        .status-card {
+            background: rgba(0, 50, 100, 0.3);
+            border: 1px solid rgba(0, 212, 255, 0.3);
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 25px;
+            backdrop-filter: blur(5px);
+        }
+
+        .status-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+
+        .status-label {
+            color: rgba(255, 255, 255, 0.7);
+            font-size: 14px;
+        }
+
+        .status-value {
+            color: #00d4ff;
+            font-weight: bold;
+        }
+
+        .toggle-container {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 25px;
+            padding: 15px;
+            background: rgba(0, 50, 100, 0.2);
+            border-radius: 10px;
+            border: 1px solid rgba(0, 212, 255, 0.2);
+        }
+
+        .toggle-label {
+            font-size: 16px;
+            color: #fff;
+        }
+
+        .toggle-switch {
+            position: relative;
+            width: 60px;
+            height: 30px;
+            background: #333;
+            border-radius: 15px;
+            cursor: pointer;
+            transition: background 0.3s;
+        }
+
+        .toggle-switch.active {
+            background: #00d4ff;
+        }
+
+        .toggle-slider {
+            position: absolute;
+            top: 3px;
+            left: 3px;
+            width: 24px;
+            height: 24px;
+            background: white;
+            border-radius: 50%;
+            transition: transform 0.3s;
+        }
+
+        .toggle-switch.active .toggle-slider {
+            transform: translateX(30px);
+        }
+
+        .key-input-container {
+            margin-bottom: 20px;
+        }
+
+        .input-group {
+            position: relative;
+            margin-bottom: 15px;
+        }
+
+        input[type="password"], input[type="text"] {
+            width: 100%;
+            padding: 12px 40px 12px 15px;
+            background: rgba(0, 30, 60, 0.5);
+            border: 1px solid rgba(0, 212, 255, 0.3);
+            border-radius: 10px;
+            color: #00d4ff;
+            font-size: 14px;
+            font-family: 'Roboto', sans-serif;
+            transition: all 0.3s;
+        }
+
+        input:focus {
+            outline: none;
+            border-color: #00d4ff;
+            background: rgba(255, 255, 255, 0.08);
+        }
+
+        .toggle-visibility {
+            position: absolute;
+            right: 12px;
+            top: 50%;
+            transform: translateY(-50%);
+            cursor: pointer;
+            color: rgba(255, 255, 255, 0.5);
+            font-size: 20px;
+        }
+
+        .btn {
+            padding: 12px 24px;
+            border: 1px solid rgba(0, 212, 255, 0.35);
+            border-radius: 10px;
+            font-size: 12px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.3s;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            font-family: 'Orbitron', monospace;
+        }
+
+        .btn-primary {
+            background: rgba(0, 212, 255, 0.1);
+            color: #00d4ff;
+            border: 1px solid rgba(0, 212, 255, 0.5);
+        }
+
+        .btn-primary:hover {
+            background: rgba(0, 212, 255, 0.2);
+            box-shadow: 0 0 20px rgba(0, 212, 255, 0.5);
+            border-color: #00d4ff;
+        }
+
+        .btn-danger {
+            background: #ff3b3b;
+            color: #fff;
+        }
+
+        .btn-danger:hover {
+            background: #ff2020;
+            box-shadow: 0 5px 20px rgba(255, 59, 59, 0.3);
+        }
+
+        .btn-secondary {
+            background: rgba(0, 212, 255, 0.05);
+            color: #00d4ff;
+            border: 1px solid rgba(0, 212, 255, 0.3);
+        }
+
+        .btn-secondary:hover {
+            background: rgba(0, 212, 255, 0.15);
+            box-shadow: 0 0 15px rgba(0, 212, 255, 0.3);
+        }
+
+        .button-group {
+            display: flex;
+            gap: 10px;
+            margin-top: 20px;
+        }
+
+        .button-group .btn {
+            flex: 1;
+        }
+
+        .alert {
+            padding: 12px 15px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            display: none;
+        }
+
+        .alert.show {
+            display: block;
+        }
+
+        .alert-success {
+            background: rgba(0, 255, 0, 0.1);
+            border: 1px solid rgba(0, 255, 0, 0.3);
+            color: #00ff00;
+        }
+
+        .alert-error {
+            background: rgba(255, 0, 0, 0.1);
+            border: 1px solid rgba(255, 0, 0, 0.3);
+            color: #ff6b6b;
+        }
+
+        .alert-info {
+            background: rgba(0, 212, 255, 0.1);
+            border: 1px solid rgba(0, 212, 255, 0.3);
+            color: #00d4ff;
+        }
+
+        .back-btn {
+            background: rgba(0, 212, 255, 0.1);
+            border: 2px solid rgba(0, 212, 255, 0.5);
+            color: #00d4ff;
+            padding: 10px 20px;
+            border-radius: 10px;
+            cursor: pointer;
+            font-family: 'Orbitron', monospace;
+            font-weight: 500;
+            transition: all 0.3s;
+            text-decoration: none;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .back-btn:hover {
+            background: rgba(0, 212, 255, 0.2);
+            box-shadow: 0 0 20px rgba(0, 212, 255, 0.5);
+            transform: translateX(-5px);
+        }
+
+        .help-text {
+            font-size: 12px;
+            color: rgba(255, 255, 255, 0.5);
+            margin-top: 5px;
+        }
+
+        .loading {
+            display: none;
+            text-align: center;
+            padding: 20px;
+        }
+
+        .loading.show {
+            display: block;
+        }
+
+        .spinner {
+            border: 3px solid rgba(0, 212, 255, 0.1);
+            border-top: 3px solid #00d4ff;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        /* Neural Link Animation */
+        .neural-link-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: radial-gradient(circle, rgba(0, 212, 255, 0.1) 0%, rgba(10, 10, 10, 0.95) 100%);
+            display: none;
+            z-index: 9999;
+            justify-content: center;
+            align-items: center;
+            animation: fadeIn 0.5s;
+        }
+
+        .neural-link-overlay.show {
+            display: flex;
+        }
+
+        .neural-container {
+            position: relative;
+            width: min(400px, 90vw);
+            height: min(400px, 90vw);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .neural-ring {
+            position: absolute;
+            border: 2px solid #00d4ff;
+            border-radius: 50%;
+            opacity: 0;
+            animation: neuralPulse 2s ease-out;
+        }
+
+        .neural-ring:nth-child(1) {
+            width: 100px;
+            height: 100px;
+            animation-delay: 0s;
+        }
+
+        .neural-ring:nth-child(2) {
+            width: 200px;
+            height: 200px;
+            animation-delay: 0.3s;
+        }
+
+        .neural-ring:nth-child(3) {
+            width: 300px;
+            height: 300px;
+            animation-delay: 0.6s;
+        }
+
+        .neural-core {
+            width: 60px;
+            height: 60px;
+            background: #00d4ff;
+            border-radius: 50%;
+            box-shadow: 0 0 60px #00d4ff, 0 0 100px #00d4ff;
+            animation: neuralCore 2s ease-out;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .neural-icon {
+            width: 30px;
+            height: 30px;
+            fill: #000;
+        }
+
+        .neural-text {
+            position: absolute;
+            bottom: -60px;
+            text-align: center;
+            width: 100%;
+            color: #00d4ff;
+            font-size: 20px;
+            font-weight: bold;
+            text-transform: uppercase;
+            letter-spacing: 3px;
+            animation: neuralTextGlow 2s ease-out;
+        }
+
+        @keyframes neuralPulse {
+            0% {
+                transform: scale(0);
+                opacity: 1;
+            }
+            100% {
+                transform: scale(1);
+                opacity: 0;
+            }
+        }
+
+        @keyframes neuralCore {
+            0% {
+                transform: scale(0);
+                opacity: 0;
+            }
+            50% {
+                transform: scale(1.2);
+                opacity: 1;
+            }
+            100% {
+                transform: scale(1);
+                opacity: 1;
+            }
+        }
+
+        @keyframes neuralTextGlow {
+            0% {
+                opacity: 0;
+                transform: translateY(20px);
+            }
+            100% {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+
+        /* Responsive Design */
+        @media (max-width: 768px) {
+            body {
+                padding: 10px;
+            }
+
+            .container {
+                padding: 20px;
+                border-radius: 15px;
+            }
+
+            h1 {
+                font-size: 24px;
+            }
+
+            .subtitle {
+                font-size: 12px;
+            }
+
+            .status-card {
+                padding: 15px;
+            }
+
+            .btn {
+                padding: 10px 16px;
+                font-size: 12px;
+            }
+
+            .button-group {
+                flex-direction: column;
+            }
+
+            .neural-text {
+                font-size: 16px;
+                letter-spacing: 2px;
+            }
+        }
+
+        @media (max-width: 480px) {
+            h1 {
+                font-size: 20px;
+            }
+
+            .toggle-switch {
+                width: 50px;
+                height: 26px;
+            }
+
+            .toggle-slider {
+                width: 20px;
+                height: 20px;
+            }
+
+            .toggle-switch.active .toggle-slider {
+                transform: translateX(24px);
+            }
+
+            .neural-text {
+                font-size: 14px;
+                bottom: -40px;
+            }
+        }
+
+        @media (min-width: 1024px) {
+            .container {
+                padding: 40px;
+            }
+
+            h1 {
+                font-size: 32px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- Neural Link Animation Overlay -->
+    <div class="neural-link-overlay" id="neuralLinkOverlay">
+        <div class="neural-container">
+            <div class="neural-ring"></div>
+            <div class="neural-ring"></div>
+            <div class="neural-ring"></div>
+            <div class="neural-core">
+                <svg class="neural-icon" viewBox="0 0 24 24">
+                    <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/>
+                </svg>
+            </div>
+            <div class="neural-text">Neural Link Activated</div>
+        </div>
+    </div>
+
+    <!-- Header matching JARVIS -->
+    <div class="header">
+        <a href="/chat" class="back-btn" id="backLink">
+            <span>←</span>
+            <span>BACK</span>
+        </a>
+        <div class="header-title">OMI SETTINGS</div>
+    </div>
+
+    <div class="container">
+        <div class="settings-card">
+        <h1>Neural Link Configuration</h1>
+        <p class="subtitle">Connect your OMI device to access your memories</p>
+
+        <div class="alert alert-info" id="infoAlert">
+            ℹ️ Your API key is encrypted and stored securely. Only you can access your memories.
+        </div>
+
+        <div class="alert alert-success" id="successAlert"></div>
+        <div class="alert alert-error" id="errorAlert"></div>
+
+        <div class="status-card">
+            <div class="status-row">
+                <span class="status-label">Connection Status:</span>
+                <span class="status-value" id="connectionStatus">Checking...</span>
+            </div>
+            <div class="status-row">
+                <span class="status-label">API Key:</span>
+                <span class="status-value" id="keyStatus">Checking...</span>
+            </div>
+            <div class="status-row" id="lastUsedRow" style="display: none;">
+                <span class="status-label">Last Used:</span>
+                <span class="status-value" id="lastUsed">-</span>
+            </div>
+        </div>
+
+        <div class="toggle-container">
+            <span class="toggle-label">Enable OMI Integration</span>
+            <div class="toggle-switch" id="omiToggle">
+                <div class="toggle-slider"></div>
+            </div>
+        </div>
+
+        <div class="key-input-container" id="keyInputContainer">
+            <div class="input-group">
+                <input type="password" id="apiKeyInput" placeholder="Enter your OMI API key (sk_...)" />
+                <span class="toggle-visibility" id="toggleVisibility">👁</span>
+            </div>
+            <p class="help-text">Get your API key from OMI app: Settings → Developer → MCP</p>
+
+            <div class="button-group">
+                <button class="btn btn-primary" id="saveKeyBtn">Save API Key</button>
+                <button class="btn btn-secondary" id="testKeyBtn">Test Connection</button>
+            </div>
+        </div>
+
+        <div id="existingKeyContainer" style="display: none;">
+            <div class="button-group">
+                <button class="btn btn-secondary" id="updateKeyBtn">Update API Key</button>
+                <button class="btn btn-danger" id="removeKeyBtn">Remove API Key</button>
+            </div>
+        </div>
+
+        <div class="loading" id="loadingIndicator">
+            <div class="spinner"></div>
+            <p style="margin-top: 10px;">Processing...</p>
+        </div>
+    </div>
+
+    <script>
+        // Get UID from URL
+        const urlParams = new URLSearchParams(window.location.search);
+        const UID = urlParams.get('uid');
+        
+        if (!UID) {
+            window.location.href = '/';
+        }
+
+        // Update back link with UID
+        document.getElementById('backLink').href = `/chat?uid=${UID}`;
+
+        // Elements
+        const connectionStatus = document.getElementById('connectionStatus');
+        const keyStatus = document.getElementById('keyStatus');
+        const lastUsed = document.getElementById('lastUsed');
+        const lastUsedRow = document.getElementById('lastUsedRow');
+        const omiToggle = document.getElementById('omiToggle');
+        const apiKeyInput = document.getElementById('apiKeyInput');
+        const toggleVisibility = document.getElementById('toggleVisibility');
+        const saveKeyBtn = document.getElementById('saveKeyBtn');
+        const testKeyBtn = document.getElementById('testKeyBtn');
+        const updateKeyBtn = document.getElementById('updateKeyBtn');
+        const removeKeyBtn = document.getElementById('removeKeyBtn');
+        const keyInputContainer = document.getElementById('keyInputContainer');
+        const existingKeyContainer = document.getElementById('existingKeyContainer');
+        const loadingIndicator = document.getElementById('loadingIndicator');
+        const successAlert = document.getElementById('successAlert');
+        const errorAlert = document.getElementById('errorAlert');
+        const infoAlert = document.getElementById('infoAlert');
+
+        let currentSettings = {
+            omi_enabled: false,
+            has_key: false
+        };
+        
+        let csrfToken = null;
+        
+        // Get CSRF token
+        async function getCsrfToken() {
+            try {
+                const response = await fetch(`/api/csrf-token?uid=${UID}`);
+                const data = await response.json();
+                csrfToken = data.token;
+                return csrfToken;
+            } catch (error) {
+                console.error('Failed to get CSRF token:', error);
+                return null;
+            }
+        }
+
+        // Show/hide alerts
+        function showAlert(type, message) {
+            const alerts = {
+                success: successAlert,
+                error: errorAlert,
+                info: infoAlert
+            };
+            
+            Object.values(alerts).forEach(alert => alert.classList.remove('show'));
+            
+            if (alerts[type]) {
+                alerts[type].textContent = message;
+                alerts[type].classList.add('show');
+                setTimeout(() => alerts[type].classList.remove('show'), 5000);
+            }
+        }
+
+        // Toggle password visibility
+        toggleVisibility.addEventListener('click', () => {
+            const type = apiKeyInput.type === 'password' ? 'text' : 'password';
+            apiKeyInput.type = type;
+            toggleVisibility.textContent = type === 'password' ? '👁' : '🔒';
+        });
+
+        // Load settings
+        async function loadSettings() {
+            try {
+                const response = await fetch(`/api/omi/settings?uid=${UID}`);
+                const data = await response.json();
+                
+                currentSettings = data;
+                updateUI();
+            } catch (error) {
+                console.error('Error loading settings:', error);
+                showAlert('error', 'Failed to load settings');
+            }
+        }
+
+        // Update UI based on settings
+        function updateUI() {
+            const { omi_enabled, has_key, key_added_at, key_last_used } = currentSettings;
+            
+            // Update status
+            connectionStatus.textContent = omi_enabled ? 'Connected' : 'Disconnected';
+            connectionStatus.style.color = omi_enabled ? '#00ff00' : '#ff6b6b';
+            
+            keyStatus.textContent = has_key ? 'Configured' : 'Not configured';
+            keyStatus.style.color = has_key ? '#00ff00' : '#ff6b6b';
+            
+            // Update toggle
+            if (omi_enabled) {
+                omiToggle.classList.add('active');
+            } else {
+                omiToggle.classList.remove('active');
+            }
+            
+            // Show/hide elements
+            if (has_key) {
+                keyInputContainer.style.display = 'none';
+                existingKeyContainer.style.display = 'block';
+                
+                if (key_last_used) {
+                    lastUsedRow.style.display = 'flex';
+                    lastUsed.textContent = new Date(key_last_used).toLocaleString();
+                }
+            } else {
+                keyInputContainer.style.display = 'block';
+                existingKeyContainer.style.display = 'none';
+                lastUsedRow.style.display = 'none';
+            }
+        }
+
+        // Toggle OMI integration
+        omiToggle.addEventListener('click', async () => {
+            if (!currentSettings.has_key && !omiToggle.classList.contains('active')) {
+                showAlert('error', 'Please add your API key first');
+                return;
+            }
+            
+            const enabled = !omiToggle.classList.contains('active');
+            
+            // Get fresh CSRF token
+            await getCsrfToken();
+            if (!csrfToken) {
+                showAlert('error', 'Security token expired. Please refresh the page.');
+                return;
+            }
+            
+            try {
+                loadingIndicator.classList.add('show');
+                
+                const response = await fetch('/api/omi/toggle', {
+                    method: 'PATCH',
+                    headers: { 
+                        'Content-Type': 'application/json',
+                        'X-CSRF-Token': csrfToken
+                    },
+                    body: JSON.stringify({ 
+                        uid: UID,
+                        enabled 
+                    })
+                });
+                
+                if (response.ok) {
+                    currentSettings.omi_enabled = enabled;
+                    updateUI();
+                    showAlert('success', `OMI integration ${enabled ? 'enabled' : 'disabled'}`);
+                    if (enabled) {
+                        showNeuralLink('Neural Link Activated');
+                    } else {
+                        showNeuralLink('Neural Link Deactivated');
+                    }
+                } else {
+                    throw new Error('Failed to toggle');
+                }
+            } catch (error) {
+                console.error('Error toggling OMI:', error);
+                showAlert('error', 'Failed to update setting');
+            } finally {
+                loadingIndicator.classList.remove('show');
+            }
+        });
+
+        // Save API key
+        saveKeyBtn.addEventListener('click', async () => {
+            const apiKey = apiKeyInput.value.trim();
+            
+            if (!apiKey) {
+                showAlert('error', 'Please enter an API key');
+                return;
+            }
+            
+            if (!apiKey.startsWith('sk_')) {
+                showAlert('error', 'Invalid API key format (should start with sk_)');
+                return;
+            }
+            
+            // Get fresh CSRF token
+            await getCsrfToken();
+            if (!csrfToken) {
+                showAlert('error', 'Security token expired. Please refresh the page.');
+                return;
+            }
+            
+            try {
+                loadingIndicator.classList.add('show');
+                
+                const response = await fetch('/api/omi/key', {
+                    method: 'POST',
+                    headers: { 
+                        'Content-Type': 'application/json',
+                        'X-CSRF-Token': csrfToken
+                    },
+                    body: JSON.stringify({ 
+                        uid: UID,
+                        api_key: apiKey 
+                    })
+                });
+                
+                const result = await response.json();
+                
+                if (response.ok) {
+                    showAlert('success', 'API key saved and validated successfully!');
+                    apiKeyInput.value = '';
+                    currentSettings.has_key = true;
+                    currentSettings.omi_enabled = true;
+                    updateUI();
+                    showNeuralLink('Neural Link Established');
+                } else {
+                    showAlert('error', result.error || 'Failed to save API key');
+                }
+            } catch (error) {
+                console.error('Error saving key:', error);
+                showAlert('error', 'Failed to save API key');
+            } finally {
+                loadingIndicator.classList.remove('show');
+            }
+        });
+
+        // Test API key
+        testKeyBtn.addEventListener('click', async () => {
+            const apiKey = apiKeyInput.value.trim();
+            
+            if (!apiKey) {
+                showAlert('error', 'Please enter an API key');
+                return;
+            }
+            
+            try {
+                loadingIndicator.classList.add('show');
+                
+                const response = await fetch('https://api.omi.me/v3/memories?limit=1', {
+                    headers: {
+                        'Authorization': `Bearer ${apiKey}`
+                    }
+                });
+                
+                if (response.ok) {
+                    showAlert('success', 'API key is valid! You can save it now.');
+                    showNeuralLink('Connection Verified');
+                } else {
+                    showAlert('error', 'API key is invalid or unauthorized');
+                }
+            } catch (error) {
+                console.error('Error testing key:', error);
+                showAlert('error', 'Failed to test API key');
+            } finally {
+                loadingIndicator.classList.remove('show');
+            }
+        });
+
+        // Update API key
+        updateKeyBtn.addEventListener('click', () => {
+            keyInputContainer.style.display = 'block';
+            existingKeyContainer.style.display = 'none';
+            apiKeyInput.value = '';
+            apiKeyInput.focus();
+        });
+
+        // Remove API key
+        removeKeyBtn.addEventListener('click', async () => {
+            if (!confirm('Are you sure you want to remove your OMI API key?')) {
+                return;
+            }
+            
+            // Get fresh CSRF token
+            await getCsrfToken();
+            if (!csrfToken) {
+                showAlert('error', 'Security token expired. Please refresh the page.');
+                return;
+            }
+            
+            try {
+                loadingIndicator.classList.add('show');
+                
+                const response = await fetch('/api/omi/key', {
+                    method: 'DELETE',
+                    headers: { 
+                        'Content-Type': 'application/json',
+                        'X-CSRF-Token': csrfToken
+                    },
+                    body: JSON.stringify({ uid: UID })
+                });
+                
+                if (response.ok) {
+                    showAlert('success', 'API key removed successfully');
+                    currentSettings.has_key = false;
+                    currentSettings.omi_enabled = false;
+                    updateUI();
+                } else {
+                    throw new Error('Failed to remove key');
+                }
+            } catch (error) {
+                console.error('Error removing key:', error);
+                showAlert('error', 'Failed to remove API key');
+            } finally {
+                loadingIndicator.classList.remove('show');
+            }
+        });
+
+        // Show neural link animation
+        function showNeuralLink(message = 'Neural Link Activated') {
+            const overlay = document.getElementById('neuralLinkOverlay');
+            const text = overlay.querySelector('.neural-text');
+            text.textContent = message;
+            overlay.classList.add('show');
+            
+            setTimeout(() => {
+                overlay.classList.remove('show');
+            }, 2500);
+        }
+
+        // Initialize
+        loadSettings();
+        getCsrfToken(); // Pre-fetch CSRF token
+
+        // Handle viewport height on mobile
+        function setViewportHeight() {
+            const vh = window.innerHeight * 0.01;
+            document.documentElement.style.setProperty('--vh', `${vh}px`);
+        }
+
+        setViewportHeight();
+        window.addEventListener('resize', setViewportHeight);
+        window.addEventListener('orientationchange', setViewportHeight);
+    </script>
+</body>
+</html>

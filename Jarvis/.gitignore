@@ -1,0 +1,73 @@
+# Environment Variables (CRITICAL - Never commit these!)
+.env
+.env.local
+.env.production
+.env.production.local
+.env.development
+.env.test
+
+# API Keys and Secrets
+*.key
+*.pem
+*.cert
+*-key.json
+service-account.json
+
+# Backup files
+*.backup
+*.bak
+*-backup.*
+index-backup.js
+
+# Test files (may contain sensitive data)
+test-*.html
+test-*.js
+
+# Node modules
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# OS Files
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Build outputs
+dist/
+build/
+*.log
+
+# Binary files
+engine.bin
+*.bin
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# Screenshots (may contain sensitive UI)
+screenshots/
+*.png
+*.jpg
+*.jpeg
+
+# Database dumps
+*.sql
+*.dump
+*.sqlite
+*.db
+
+# Production files with actual keys
+*-production.js
+index-production.js
+
+# Keep production template
+!.env.production.example
