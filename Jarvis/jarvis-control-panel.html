@@ -96,8 +96,8 @@
                 0 0 50px rgba(0, 212, 255, 0.5),
                 inset 0 0 20px rgba(0, 212, 255, 0.1),
                 0 0 100px rgba(0, 212, 255, 0.2);
-            max-width: 900px;
-            width: 90%;
+            max-width: 1000px;
+            width: min(92%, 1000px);
             -webkit-backdrop-filter: blur(10px);
             backdrop-filter: blur(10px);
             position: relative;
@@ -218,6 +218,7 @@
             display: grid;
             gap: 20px;
             margin-bottom: 30px;
+            grid-template-columns: repeat(3, 1fr);
         }
 
         .btn {
@@ -650,6 +651,63 @@
                 scroll-behavior: auto !important;
             }
         }
+
+        /* Improve viewport unit handling on mobile browsers */
+        @supports (height: 100dvh) {
+            body { min-height: 100dvh; }
+        }
+
+        /* Responsive layout: large screens */
+        @media (min-width: 1200px) {
+            .button-grid {
+                grid-template-columns: repeat(4, 1fr);
+            }
+            .quick-actions {
+                grid-template-columns: repeat(6, 1fr);
+            }
+        }
+
+        /* Medium screens */
+        @media (max-width: 1024px) {
+            .container {
+                padding: 30px;
+                width: min(94%, 900px);
+            }
+            h1 { font-size: 2.5em; }
+            .button-grid { grid-template-columns: repeat(3, 1fr); }
+            .quick-actions { grid-template-columns: repeat(4, 1fr); }
+        }
+
+        /* Tablets and small laptops */
+        @media (max-width: 768px) {
+            .container {
+                padding: 24px;
+                width: 94%;
+            }
+            h1 { font-size: 2em; letter-spacing: 3px; }
+            .subtitle { font-size: 0.85em; }
+            .button-grid { grid-template-columns: repeat(2, 1fr); gap: 14px; }
+            .quick-actions { grid-template-columns: repeat(3, 1fr); gap: 8px; }
+            .btn { padding: 16px; font-size: 15px; }
+            .status { margin-bottom: 20px; }
+        }
+
+        /* Phones */
+        @media (max-width: 480px) {
+            .container { padding: 18px; width: 96%; }
+            h1 { font-size: 1.6em; letter-spacing: 2px; }
+            .button-grid { grid-template-columns: 1fr; gap: 12px; }
+            .quick-actions { grid-template-columns: repeat(2, 1fr); gap: 8px; }
+            .btn { padding: 14px; font-size: 16px; }
+            .notification { right: 12px; left: 12px; top: auto; bottom: 12px; }
+            .modal-content { width: 94%; max-height: 85vh; padding: 20px; }
+        }
+
+        /* Very small phones */
+        @media (max-width: 360px) {
+            .quick-btn { padding: 10px 6px; font-size: 14px; }
+            .btn { padding: 12px; font-size: 14px; }
+        }
     </style>
 </head>
 <body>
@@ -953,31 +1011,26 @@
             UID = localStorage.getItem('jarvis_uid');
         }
         
-        // If still no UID, prompt for one
+        // If still no UID, use a default for now
         if (!UID) {
-            UID = prompt('Enter your OMI UID to access J.A.R.V.I.S.:');
-            if (!UID || UID.length < 3) {
-                alert('Valid UID required to access the system.');
-                window.location.href = '/';
-                throw new Error('No UID provided');
-            }
-            // Save for next time
+            // Use a default UID for testing
+            UID = 'jarvis-user';
             localStorage.setItem('jarvis_uid', UID);
-            // Redirect with UID in URL
-            window.location.href = `/?uid=${UID}`;
-        } else {
-            // Save UID for future visits
-            localStorage.setItem('jarvis_uid', UID);
-            // Initialize storage with UID - NOW SAFE because JarvisAPI is defined
-            initializeStorage();
-            // Clean URL (remove UID parameter) like Brain app
-            if (window.location.search.includes('uid=')) {
-                const cleanUrl = window.location.pathname;
-                window.history.replaceState({}, document.title, cleanUrl);
-            }
-            // Bootstrap salutation preference after storage is initialized
-            (async () => { await bootstrapSalutation(); })();
+            console.log('Using default UID:', UID);
         }
+        
+        // Always initialize storage
+        localStorage.setItem('jarvis_uid', UID);
+        initializeStorage();
+        
+        // Clean URL (remove UID parameter) like Brain app  
+        if (window.location.search.includes('uid=')) {
+            const cleanUrl = window.location.pathname;
+            window.history.replaceState({}, document.title, cleanUrl);
+        }
+        
+        // Bootstrap salutation preference after storage is initialized
+        (async () => { await bootstrapSalutation(); })();
         
         // Salutation preference functions
         function getSalutation() {

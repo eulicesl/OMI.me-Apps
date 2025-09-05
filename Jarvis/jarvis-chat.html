@@ -648,6 +648,7 @@
                 <option value="">CURRENT SESSION</option>
             </select>
             <button class="new-chat-btn" id="newChatBtn" type="button">NEW CHAT</button>
+            <a href="/settings/omi" class="new-chat-btn" id="omiSettingsBtn" style="text-decoration: none; display: inline-flex; align-items: center;">⚙️ OMI</a>
             <div class="status-indicator" id="statusIndicator">◉ ONLINE</div>
         </div>
     </div>
@@ -707,8 +708,9 @@
             window.location.href = '/';
         }
 
-        // Update back button to preserve UID
+        // Update back button and settings link to preserve UID
         document.getElementById('backBtn').href = `/?uid=${UID}`;
+        document.getElementById('omiSettingsBtn').href = `/settings/omi?uid=${UID}`;
 
         // Chat session management
         function getChatSessionId() {
