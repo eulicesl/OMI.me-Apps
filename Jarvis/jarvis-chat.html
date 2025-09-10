@@ -693,10 +693,30 @@
         if (window.marked) {
             const renderer = new marked.Renderer();
             const originalParagraph = renderer.paragraph.bind(renderer);
+            
+            // Override all renderer methods that might return objects
             renderer.paragraph = (text) => {
+                // Handle marked.js token objects
+                let textStr = text;
+                if (typeof text === 'object' && text !== null) {
+                    // Extract raw text from token object
+                    textStr = text.raw || text.text || String(text);
+                } else {
+                    textStr = String(text || '');
+                }
                 // Single line without newlines => no <p> wrapper
-                return text.trim().includes('\n') ? originalParagraph(text) : text;
+                return textStr.trim().includes('\n') ? originalParagraph(textStr) : textStr;
             };
+            
+            // Override text renderer to ensure strings
+            renderer.text = (text) => {
+                if (typeof text === 'object' && text !== null) {
+                    // Extract raw text from token object
+                    return text.raw || text.text || String(text);
+                }
+                return String(text || '');
+            };
+            
             marked.use({ renderer });
         }
         
@@ -881,11 +901,58 @@
                 messagesContainer.innerHTML = messages.map(msg => {
                     const type = msg.is_user ? 'user' : 'assistant';
                     const time = formatTime(msg.timestamp);
-                    const cleanText = sanitizeText(msg.text);
+                    
+                    // Handle text that might be an object
+                    let messageText = msg.text;
+                    if (typeof messageText === 'object' && messageText !== null) {
+                        // If it's an object, try to extract the actual text
+                        // Check for marked.js token structure
+                        if (messageText.raw) {
+                            messageText = messageText.raw;
+                        } else if (messageText.text) {
+                            messageText = messageText.text;
+                        } else if (messageText.content) {
+                            messageText = messageText.content;
+                        } else if (messageText.message) {
+                            messageText = messageText.message;
+                        } else {
+                            // Last resort - try to find any string value
+                            messageText = Object.values(messageText).find(v => typeof v === 'string') || '';
+                        }
+                    }
+                    // Convert to string to be safe
+                    messageText = String(messageText || '');
+                    
+                    const cleanText = sanitizeText(messageText);
                     // Use marked.js with DOMPurify for XSS safety
-                    const content = window.marked && window.DOMPurify 
-                        ? DOMPurify.sanitize(marked.parse(cleanText), {USE_PROFILES:{html:true}}) 
-                        : escapeHtml(cleanText);
+                    let content;
+                    try {
+                        if (window.marked && window.DOMPurify) {
+                            // Ensure cleanText is a string before parsing
+                            const textToParse = String(cleanText || '');
+                            const parsed = marked.parse(textToParse);
+                            // Force parsed to be a string
+                            const parsedStr = typeof parsed === 'object' ? JSON.stringify(parsed) : String(parsed);
+                            content = DOMPurify.sanitize(parsedStr, {USE_PROFILES:{html:true}});
+                        } else {
+                            content = escapeHtml(cleanText);
+                        }
+                    } catch (e) {
+                        console.error('Error parsing markdown in renderMessages:', e);
+                        content = escapeHtml(cleanText);
+                    }
+                    // Final check - if content is literally "[object Object]" or contains JSON structure
+                    if (content === '[object Object]' || String(content) === '[object Object]' || 
+                        content.includes('{"type":"paragraph"') || content.includes('"raw":"')) {
+                        console.error('Content has object/JSON structure, raw message:', msg);
+                        // Try to extract just the text content
+                        if (msg.text && typeof msg.text === 'object' && msg.text.raw) {
+                            content = escapeHtml(String(msg.text.raw));
+                        } else {
+                            content = escapeHtml(String(messageText));
+                        }
+                    }
+                    
                     return `
                         <div class="message ${type}">
                             <div class="message-bubble">
@@ -930,11 +997,59 @@
             welcomeMessage.style.display = 'none';
             const type = isUser ? 'user' : 'assistant';
             const time = formatTime(Date.now() / 1000);
-            const cleanText = sanitizeText(text);
+            
+            // Handle text that might be an object
+            let messageText = text;
+            if (typeof messageText === 'object' && messageText !== null) {
+                // If it's an object, try to extract the actual text
+                // Check for marked.js token structure
+                if (messageText.raw) {
+                    messageText = messageText.raw;
+                } else if (messageText.text) {
+                    messageText = messageText.text;
+                } else if (messageText.content) {
+                    messageText = messageText.content;
+                } else if (messageText.message) {
+                    messageText = messageText.message;
+                } else {
+                    // Last resort - try to find any string value
+                    messageText = Object.values(messageText).find(v => typeof v === 'string') || '';
+                }
+            }
+            // Convert to string to be safe
+            messageText = String(messageText || '');
+            
+            const cleanText = sanitizeText(messageText);
             // Use marked.js with DOMPurify for XSS safety
-            const content = window.marked && window.DOMPurify 
-                ? DOMPurify.sanitize(marked.parse(cleanText), {USE_PROFILES:{html:true}}) 
-                : escapeHtml(cleanText);
+            let content;
+            try {
+                if (window.marked && window.DOMPurify) {
+                    // Ensure cleanText is a string before parsing
+                    const textToParse = String(cleanText || '');
+                    const parsed = marked.parse(textToParse);
+                    // Force parsed to be a string
+                    const parsedStr = typeof parsed === 'object' ? JSON.stringify(parsed) : String(parsed);
+                    content = DOMPurify.sanitize(parsedStr, {USE_PROFILES:{html:true}});
+                } else {
+                    content = escapeHtml(cleanText);
+                }
+            } catch (e) {
+                console.error('Error parsing markdown:', e);
+                content = escapeHtml(cleanText);
+            }
+            
+            // Final check - if content is literally "[object Object]" or contains JSON structure
+            if (content === '[object Object]' || String(content) === '[object Object]' || 
+                content.includes('{"type":"paragraph"') || content.includes('"raw":"')) {
+                console.error('addMessage: Content has object/JSON structure, original text:', text);
+                // Try to extract just the text content
+                if (text && typeof text === 'object' && text.raw) {
+                    content = escapeHtml(String(text.raw));
+                } else {
+                    content = escapeHtml(String(messageText));
+                }
+            }
+            
             const messageHtml = `
                 <div class="message ${type}">
                     <div class="message-bubble">
@@ -987,8 +1102,34 @@
                 // Find the assistant's response (last non-user message)
                 const assistantMsg = result.messages.filter(m => !m.is_user).pop();
                 if (assistantMsg) {
+                    // Debug logging to check structure
+                    console.log('Assistant message object:', assistantMsg);
+                    console.log('Assistant message text type:', typeof assistantMsg.text);
+                    console.log('Assistant message text value:', assistantMsg.text);
+                    
+                    // Ensure text is a string, handle if it's an object
+                    let messageText = assistantMsg.text;
+                    if (typeof messageText === 'object' && messageText !== null) {
+                        // If it's an object, try to extract the actual text
+                        // Check for marked.js token structure
+                        if (messageText.raw) {
+                            messageText = messageText.raw;
+                        } else if (messageText.text) {
+                            messageText = messageText.text;
+                        } else if (messageText.content) {
+                            messageText = messageText.content;
+                        } else if (messageText.message) {
+                            messageText = messageText.message;
+                        } else {
+                            // Last resort - try to find any string value
+                            messageText = Object.values(messageText).find(v => typeof v === 'string') || '';
+                        }
+                    }
+                    // Convert to string to be safe
+                    messageText = String(messageText || '');
+                    
                     // Add only the assistant's response instead of re-rendering all
-                    addMessage(assistantMsg.text, false);
+                    addMessage(messageText, false);
                 } else {
                     // Fallback: re-render all messages
                     renderMessages(result.messages);
@@ -1031,7 +1172,10 @@
         async function init() {
             updateStatus('◉ LOADING', true);
             const history = await api.getHistory(sessionId);
+            console.log('Init - loaded history:', history);
             if (history?.messages?.length > 0) {
+                console.log('Init - first message:', history.messages[0]);
+                console.log('Init - message text type:', typeof history.messages[0]?.text);
                 renderMessages(history.messages);
             }
             updateStatus('◉ ONLINE');
