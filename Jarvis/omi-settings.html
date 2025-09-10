@@ -619,7 +619,7 @@
 
         <div class="key-input-container" id="keyInputContainer">
             <div class="input-group">
-                <input type="password" id="apiKeyInput" placeholder="Enter your OMI API key (sk_...)" />
+                <input type="password" id="apiKeyInput" placeholder="Enter your OMI API key" />
                 <span class="toggle-visibility" id="toggleVisibility">👁</span>
             </div>
             <p class="help-text">Get your API key from OMI app: Settings → Developer → MCP</p>
@@ -826,8 +826,9 @@
                 return;
             }
             
-            if (!apiKey.startsWith('sk_')) {
-                showAlert('error', 'Invalid API key format (should start with sk_)');
+            // OMI API keys have various formats, just check it's not empty and has reasonable length
+            if (apiKey.length < 10) {
+                showAlert('error', 'API key seems too short. Please enter a valid OMI API key');
                 return;
             }
             
