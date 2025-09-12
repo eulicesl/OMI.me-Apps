@@ -732,37 +732,37 @@
         </div>
 
         <div class="button-grid" role="group" aria-label="Main controls">
-            <button class="btn btn-primary" onclick="showDailyBriefing()">
+            <button class="btn btn-primary" data-action="showDailyBriefing">
                 <span class="emoji">⚡</span>
                 <span>DAILY BRIEFING</span>
             </button>
 
-            <button class="btn" onclick="showSmartActions()">
+            <button class="btn" data-action="showSmartActions">
                 <span class="emoji">🎯</span>
                 <span>SMART ACTIONS</span>
             </button>
 
-            <button class="btn" onclick="showPendingActions()">
+            <button class="btn" data-action="showPendingActions">
                 <span class="emoji">📡</span>
                 <span>PENDING ACTIONS</span>
             </button>
 
-            <button class="btn" onclick="quickCapture()">
+            <button class="btn" data-action="quickCapture">
                 <span class="emoji">🗓️</span>
                 <span>QUICK CAPTURE</span>
             </button>
 
-            <button class="btn" onclick="viewProductivity()">
+            <button class="btn" data-action="viewProductivity">
                 <span class="emoji">📈</span>
                 <span>PRODUCTIVITY</span>
             </button>
 
-            <button class="btn" onclick="showPatterns()">
+            <button class="btn" data-action="showPatterns">
                 <span class="emoji">🔍</span>
                 <span>INSIGHTS</span>
             </button>
             <!-- NEW: Open Chat -->
-            <button class="btn btn-primary" onclick="openChatPage()">
+            <button class="btn btn-primary" data-action="openChatPage">
                 <span class="emoji">💬</span>
                 <span>OPEN CHAT</span>
             </button>
@@ -770,10 +770,10 @@
 
         <div class="section-title">QUICK ACCESS PROTOCOLS</div>
         <div class="quick-actions">
-            <button class="quick-btn" onclick="addTask()">ADD TASK</button>
-            <button class="quick-btn" onclick="addReminder()">REMINDER</button>
-            <button class="quick-btn" onclick="addEvent()">EVENT</button>
-            <button class="quick-btn" onclick="addNote()">NOTE</button>
+            <button class="quick-btn" data-action="addTask">ADD TASK</button>
+            <button class="quick-btn" data-action="addReminder">REMINDER</button>
+            <button class="quick-btn" data-action="addEvent">EVENT</button>
+            <button class="quick-btn" data-action="addNote">NOTE</button>
         </div>
 
         <div class="footer">
@@ -791,7 +791,7 @@
         <div class="modal-content">
             <div class="modal-header">
                 <h2 class="modal-title" id="modalTitle">JARVIS INTERFACE</h2>
-                <button class="modal-close" onclick="closeModal()">×</button>
+                <button class="modal-close" id="modalCloseBtn">×</button>
             </div>
             <div class="modal-body" id="modalBody">
                 <!-- Dynamic content goes here -->
@@ -800,6 +800,17 @@
     </div>
 
     <script>
+        // Initialize immediately to prevent any timing issues
+        (function() {
+            console.log('JARVIS Control Panel initializing...');
+            
+            // UID from URL or default
+            const urlParams = new URLSearchParams(window.location.search);
+            window.UID = urlParams.get('uid') || localStorage.getItem('jarvis_uid') || 'jarvis-user';
+            localStorage.setItem('jarvis_uid', window.UID);
+            console.log('UID:', window.UID);
+        })();
+        
         // Backend API Manager (replaces localStorage with Supabase)
         // MUST BE DEFINED FIRST before any usage
         class JarvisAPI {
@@ -992,35 +1003,21 @@
         }
 
         let storage = null; // Initialize later after UID is confirmed
-        let UID = null; // Declare UID at the top level
+        let UID = window.UID; // Use the UID that was already set in window.UID
         
         // Function to initialize storage after UID is set
         function initializeStorage() {
-            if (UID) {
-                storage = new JarvisAPI(UID);
-                console.log('Storage initialized with UID:', UID);
+            const uid = UID || window.UID || 'jarvis-user';
+            if (uid) {
+                storage = new JarvisAPI(uid);
+                console.log('Storage initialized with UID:', uid);
             }
         }
 
-        // Get UID from URL parameter (like Friend and Brain apps)
-        const urlParams = new URLSearchParams(window.location.search);
-        UID = urlParams.get('uid');
-        
-        // If no UID, check localStorage (Brain app pattern)
-        if (!UID) {
-            UID = localStorage.getItem('jarvis_uid');
-        }
-        
-        // If still no UID, use a default for now
-        if (!UID) {
-            // Use a default UID for testing
-            UID = 'jarvis-user';
-            localStorage.setItem('jarvis_uid', UID);
-            console.log('Using default UID:', UID);
-        }
-        
-        // Always initialize storage
-        localStorage.setItem('jarvis_uid', UID);
+        // UID is already set in window.UID from the earlier initialization
+        // Sync the global UID variable with window.UID
+        UID = window.UID;
+        // Just initialize storage using the global UID
         initializeStorage();
         
         // Clean URL (remove UID parameter) like Brain app  
@@ -1103,22 +1100,39 @@
 
         // Generate particles (reduced for performance)
         function createParticles() {
-            const particlesContainer = document.getElementById('particles');
-            const particleCount = 30;
-            for (let i = 0; i < particleCount; i++) {
-                const particle = document.createElement('div');
-                particle.className = 'particle';
-                particle.style.left = Math.random() * 100 + '%';
-                particle.style.animationDelay = Math.random() * 20 + 's';
-                particle.style.animationDuration = (Math.random() * 20 + 10) + 's';
-                particlesContainer.appendChild(particle);
+            try {
+                const particlesContainer = document.getElementById('particles');
+                if (!particlesContainer) {
+                    console.error('Particles container not found');
+                    return;
+                }
+                const particleCount = 30;
+                for (let i = 0; i < particleCount; i++) {
+                    const particle = document.createElement('div');
+                    particle.className = 'particle';
+                    particle.style.left = Math.random() * 100 + '%';
+                    particle.style.animationDelay = Math.random() * 20 + 's';
+                    particle.style.animationDuration = (Math.random() * 20 + 10) + 's';
+                    particlesContainer.appendChild(particle);
+                }
+            } catch (e) {
+                console.error('Error creating particles:', e);
             }
         }
         createParticles();
 
         // Generate session ID
-        const sessionId = 'JARVIS-' + Date.now().toString(36).toUpperCase();
-        document.getElementById('sessionId').textContent = sessionId;
+        try {
+            const sessionId = 'JARVIS-' + Date.now().toString(36).toUpperCase();
+            const sessionElement = document.getElementById('sessionId');
+            if (sessionElement) {
+                sessionElement.textContent = sessionId;
+            } else {
+                console.error('Session ID element not found');
+            }
+        } catch (e) {
+            console.error('Error setting session ID:', e);
+        }
 
         // Check for last sync
         try {
@@ -1265,8 +1279,8 @@
                                 <span class="action-type" style="background: rgba(255, 107, 107, 0.2);">URGENT</span>
                                 <div class="action-text">${action.text}</div>
                                 <div class="action-buttons" style="margin-top: 10px;">
-                                    <button class="action-btn" onclick="markComplete(${action.id})">COMPLETE</button>
-                                    <button class="action-btn" onclick="scheduleAction(${action.id})">SCHEDULE</button>
+                                    <button class="action-btn" data-action="markComplete" data-id="${action.id}">COMPLETE</button>
+                                    <button class="action-btn" data-action="scheduleAction" data-id="${action.id}">SCHEDULE</button>
                                 </div>
                             </div>
                         `).join('')}
@@ -1280,7 +1294,7 @@
                             <span class="action-type" style="background: rgba(0, 212, 255, 0.2);">AI SUGGESTION</span>
                             <div class="action-text">${suggestion}</div>
                             <div class="action-buttons" style="margin-top: 10px;">
-                                <button class="action-btn" onclick="autoOrganizeTasks()">APPLY</button>
+                                <button class="action-btn" data-action="autoOrganizeTasks">APPLY</button>
                             </div>
                         </div>
                     `).join('')}
@@ -1289,7 +1303,7 @@
                             <span class="action-type" style="background: rgba(0, 212, 255, 0.2);">AI SUGGESTION</span>
                             <div class="action-text">Start your day by setting 3 key goals</div>
                             <div class="action-buttons" style="margin-top: 10px;">
-                                <button class="action-btn" onclick="setDailyGoals()">SET GOALS</button>
+                                <button class="action-btn" data-action="setDailyGoals">SET GOALS</button>
                             </div>
                         </div>
                     ` : ''}
@@ -1304,7 +1318,7 @@
                                 <span class="action-type" style="background: rgba(0, 150, 255, 0.2);">RECURRING</span>
                                 <div class="action-text">${action.text}</div>
                                 <div class="action-buttons" style="margin-top: 10px;">
-                                    <button class="action-btn" onclick="automateRecurring(${action.id})">AUTOMATE</button>
+                                    <button class="action-btn" data-action="automateRecurring" data-id="${action.id}">AUTOMATE</button>
                                 </div>
                             </div>
                         `).join('')}
@@ -1338,8 +1352,8 @@
                         <div class="action-text">${action.text}</div>
                         <small style="color: rgba(0, 212, 255, 0.5);">${new Date(action.created).toLocaleString()}</small>
                         <div class="action-buttons" style="margin-top: 10px;">
-                            <button class="action-btn" onclick="markComplete(${action.id})">COMPLETE</button>
-                            <button class="action-btn" onclick="deleteAction(${action.id})">DELETE</button>
+                            <button class="action-btn" data-action="markComplete" data-id="${action.id}">COMPLETE</button>
+                            <button class="action-btn" data-action="deleteAction" data-id="${action.id}">DELETE</button>
                         </div>
                     </div>
                 `).join('') : '<p style="color: rgba(0, 212, 255, 0.5);">No pending actions. All tasks completed!</p>'}
@@ -1378,10 +1392,10 @@
                 </div>
                 
                 <div style="display: flex; gap: 10px; margin-top: 20px;">
-                    <button class="btn" style="flex: 1; padding: 15px;" onclick="saveCapture()">
+                    <button class="btn" style="flex: 1; padding: 15px;" data-action="saveCapture">
                         <span>SAVE ACTION</span>
                     </button>
-                    <button class="btn" style="flex: 1; padding: 15px;" onclick="closeModal()">
+                    <button class="btn" style="flex: 1; padding: 15px;" data-action="modalClose">
                         <span>CANCEL</span>
                     </button>
                 </div>
@@ -1639,7 +1653,7 @@
                     <div class="action-card">
                         <div class="action-text">Create templates for your top ${Math.min(3, topKeywords.length)} recurring task types</div>
                         <div class="action-buttons" style="margin-top: 10px;">
-                            <button class="action-btn" onclick="createTemplates()">CREATE TEMPLATES</button>
+                            <button class="action-btn" data-action="createTemplates">CREATE TEMPLATES</button>
                         </div>
                     </div>
                 </div>
@@ -1674,22 +1688,22 @@
                     <p style="color: rgba(0, 212, 255, 0.7);">EXPORT OPTIONS</p>
                 </div>
                 
-                <div class="action-card" style="cursor: pointer;" onclick="downloadJSON()">
+                <div class="action-card js-download-json" style="cursor: pointer;">
                     <div class="action-text">📄 DOWNLOAD AS JSON</div>
                     <small style="color: rgba(0, 212, 255, 0.5);">Complete data export for backup</small>
                 </div>
                 
-                <div class="action-card" style="cursor: pointer;" onclick="copyMarkdown()">
+                <div class="action-card js-copy-markdown" style="cursor: pointer;">
                     <div class="action-text">📝 COPY AS MARKDOWN</div>
                     <small style="color: rgba(0, 212, 255, 0.5);">Formatted for notes and documentation</small>
                 </div>
                 
-                <div class="action-card" style="cursor: pointer;" onclick="copyCSV()">
+                <div class="action-card js-copy-csv" style="cursor: pointer;">
                     <div class="action-text">📊 COPY AS CSV</div>
                     <small style="color: rgba(0, 212, 255, 0.5);">For spreadsheet applications</small>
                 </div>
                 
-                <div class="action-card" style="cursor: pointer;" onclick="downloadPlainText()">
+                <div class="action-card js-download-text" style="cursor: pointer;">
                     <div class="action-text">📝 DOWNLOAD AS TEXT</div>
                     <small style="color: rgba(0, 212, 255, 0.5);">Plain text document with formatting</small>
                 </div>
@@ -1772,10 +1786,10 @@
                 </div>
                 
                 <div style="display: flex; gap: 10px; margin-top: 20px;">
-                    <button class="btn" style="flex: 1; padding: 15px;" onclick="saveCapture()">
+                    <button class="btn" style="flex: 1; padding: 15px;" data-action="saveCapture">
                         <span>SAVE ${type.toUpperCase()}</span>
                     </button>
-                    <button class="btn" style="flex: 1; padding: 15px;" onclick="closeModal()">
+                    <button class="btn" style="flex: 1; padding: 15px;" data-action="modalClose">
                         <span>CANCEL</span>
                     </button>
                 </div>
@@ -2238,6 +2252,92 @@ ${separator}
             const salutation = getSalutation().toUpperCase();
             showNotification(`${greeting}, ${salutation}. JARVIS IS READY.`);
         }, 1000);
+    </script>
+    <script>
+        // Attach event listeners instead of inline handlers (CSP-friendly)
+        (function () {
+            const actionMap = {
+                showDailyBriefing,
+                showSmartActions,
+                showPendingActions,
+                quickCapture,
+                viewProductivity,
+                showPatterns,
+                openChatPage,
+                addTask,
+                addReminder,
+                addEvent,
+                addNote,
+                createTemplates,
+                // Modal/action handlers from dynamic content
+                markComplete: (ev) => {
+                    const id = ev?.target?.getAttribute('data-id');
+                    if (id) markComplete(id);
+                },
+                scheduleAction: (ev) => {
+                    const id = ev?.target?.getAttribute('data-id');
+                    if (id) scheduleAction(id);
+                },
+                autoOrganizeTasks,
+                setDailyGoals,
+                automateRecurring: (ev) => {
+                    const id = ev?.target?.getAttribute('data-id');
+                    if (id) automateRecurring(id);
+                },
+                saveCapture,
+                modalClose: closeModal
+            };
+
+            document.addEventListener('DOMContentLoaded', () => {
+                console.log('DOM loaded, initializing event listeners...');
+                
+                // Check if container is visible
+                const container = document.querySelector('.container');
+                if (container) {
+                    console.log('Container found:', container);
+                    console.log('Container computed style:', window.getComputedStyle(container));
+                } else {
+                    console.error('Container not found!');
+                }
+                
+                // Main action buttons
+                const buttons = document.querySelectorAll('[data-action]');
+                console.log('Found buttons with data-action:', buttons.length);
+                
+                buttons.forEach(btn => btn.addEventListener('click', () => {
+                    const fn = actionMap[btn.getAttribute('data-action')];
+                    if (typeof fn === 'function') fn();
+                }));
+
+                // Modal close
+                const closeBtn = document.getElementById('modalCloseBtn');
+                if (closeBtn) closeBtn.addEventListener('click', closeModal);
+
+                // Export action cards
+                const bind = (sel, fn) => {
+                    const el = document.querySelector(sel);
+                    if (el && typeof fn === 'function') el.addEventListener('click', fn);
+                };
+                bind('.js-download-json', downloadJSON);
+                bind('.js-copy-markdown', copyMarkdown);
+                bind('.js-copy-csv', copyCSV);
+                bind('.js-download-text', downloadPlainText);
+            });
+
+            // Bind action buttons rendered inside modals/dynamic sections
+            window.bindModalActions = function() {
+                document.querySelectorAll('.action-btn[data-action]')
+                    .forEach(el => el.addEventListener('click', (ev) => {
+                        const action = el.getAttribute('data-action');
+                        const fn = actionMap[action];
+                        if (typeof fn === 'function') fn(ev);
+                    }));
+                document.querySelectorAll('button[data-action="modalClose"]')
+                    .forEach(el => el.addEventListener('click', closeModal));
+                const saveBtn = document.querySelector('button[data-action="saveCapture"]');
+                if (saveBtn) saveBtn.addEventListener('click', saveCapture);
+            }
+        })();
     </script>
 </body>
 </html>
