@@ -73,7 +73,7 @@ function validateAction(req, res, next) {
         return res.status(400).json({ error: 'Invalid action text' });
     }
     
-    const validTypes = ['task', 'reminder', 'goal', 'event'];
+    const validTypes = ['task', 'reminder', 'goal', 'event', 'note'];
     if (type && !validTypes.includes(type)) {
         return res.status(400).json({ error: 'Invalid action type' });
     }
