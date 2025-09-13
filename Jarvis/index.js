@@ -503,7 +503,7 @@ async function generateAssistantReply(messages, uid) {
         }
     }
     
-    // Use OpenRouter as fallback
+    // Use OpenRouter as primary if available
     if (process.env.OPENROUTER_API_KEY) {
         try {
             const OPENROUTER_REFERER = process.env.OPENROUTER_REFERER || 'https://jarvis-app.ondigitalocean.app';
@@ -545,16 +545,8 @@ async function generateAssistantReply(messages, uid) {
         }
     }
     
-    // Fallback to simple responses
-    const responses = [
-        `Certainly, ${salutation}. I'll help you with that.`,
-        `Right away, ${salutation}.`,
-        `As you wish, ${salutation}.`,
-        `Of course, ${salutation}. Consider it done.`,
-        `I understand, ${salutation}. Let me assist you with that.`
-    ];
-    
-    return responses[Math.floor(Math.random() * responses.length)];
+    // If no model configured, return a clear error so UI can surface it
+    throw new Error('No chat model configured. Set OPENROUTER_API_KEY or OMI_CHAT_ENDPOINT or OLLAMA_BASE_URL.');
 }
 
 function createNotificationPrompt(messages) {
@@ -1434,17 +1426,18 @@ app.put('/api/actions/:id', security.validateUid, async (req, res) => {
             .single();
 
         const goals = userData?.goals || [];
-        const goalIndex = goals.findIndex(g => g.id == id);
+        const goalIndex = goals.findIndex(g => String(g.id) === String(id));
         
         if (goalIndex !== -1) {
             goals[goalIndex].completed = completed;
             goals[goalIndex].completed_at = completed ? new Date().toISOString() : null;
             
             // Update frienddb
-            await supabase
+            const { error } = await supabase
                 .from('frienddb')
                 .update({ goals: goals })
                 .eq('uid', uid);
+            if (error) throw error;
             
             res.json(goals[goalIndex]);
         } else {
@@ -1474,13 +1467,14 @@ app.delete('/api/actions/:id', security.validateUid, async (req, res) => {
             .single();
 
         const goals = userData?.goals || [];
-        const filteredGoals = goals.filter(g => g.id != id);
+        const filteredGoals = goals.filter(g => String(g.id) !== String(id));
         
         // Update frienddb
-        await supabase
+        const { error } = await supabase
             .from('frienddb')
             .update({ goals: filteredGoals })
             .eq('uid', uid);
+        if (error) throw error;
 
         res.json({ success: true });
     } catch (err) {
