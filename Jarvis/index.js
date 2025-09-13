@@ -1350,7 +1350,7 @@ app.post('/api/actions', security.validateUid, security.validateAction, async (r
     const { date } = req.body;
 
     try {
-        // Get existing goals from frienddb
+        // Get existing goals from frienddb (row may not exist yet)
         const { data: userData } = await supabase
             .from('frienddb')
             .select('goals')
@@ -1367,7 +1367,16 @@ app.post('/api/actions', security.validateUid, security.validateAction, async (r
             created_at: new Date().toISOString()
         };
 
-        // Add new goal to array
+        // If user row doesn't exist yet, create it with the new goal
+        if (!userData) {
+            const { error: upsertError } = await supabase
+                .from('frienddb')
+                .upsert({ uid, goals: [newGoal] }, { onConflict: 'uid' });
+            if (upsertError) throw upsertError;
+            return res.json(newGoal);
+        }
+
+        // Add new goal to existing array
         const updatedGoals = [...existingGoals, newGoal];
 
         // Update frienddb with new goals
@@ -1377,7 +1386,7 @@ app.post('/api/actions', security.validateUid, security.validateAction, async (r
             .eq('uid', uid);
 
         if (error) throw error;
-        res.json(newGoal);
+        return res.json(newGoal);
     } catch (err) {
         console.error("Error saving action:", err);
         res.status(500).json({ error: "Failed to save action" });
