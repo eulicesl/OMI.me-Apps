@@ -1121,12 +1121,13 @@
         }
         createParticles();
 
-        // Generate session ID
+        // Generate session ID (global)
+        let SESSION_ID;
         try {
-            const sessionId = 'JARVIS-' + Date.now().toString(36).toUpperCase();
+            SESSION_ID = 'JARVIS-' + Date.now().toString(36).toUpperCase();
             const sessionElement = document.getElementById('sessionId');
             if (sessionElement) {
-                sessionElement.textContent = sessionId;
+                sessionElement.textContent = SESSION_ID;
             } else {
                 console.error('Session ID element not found');
             }
@@ -1161,6 +1162,10 @@
             document.getElementById('modalTitle').textContent = title;
             document.getElementById('modalBody').innerHTML = content;
             document.getElementById('modal').style.display = 'block';
+            // Ensure dynamic content has its handlers attached
+            if (typeof window.bindModalActions === 'function') {
+                window.bindModalActions();
+            }
         }
 
         function closeModal() {
@@ -1243,7 +1248,7 @@
             updateStatus('◉ PROCESSING INTELLIGENT SUGGESTIONS', true);
             
             // Fetch AI-powered smart actions
-            const smartData = await storage.getSmartActions();
+            let smartData = await storage.getSmartActions();
             
             if (!smartData) {
                 // Fallback to basic analysis
@@ -1569,6 +1574,9 @@
             // Fetch AI-powered insights
             const insightsData = await storage.getInsights();
             
+            // Load actions for pattern analysis
+            const actions = await storage.getActions();
+            
             // Pattern analysis
             const taskTypes = {};
             const weekdayActivity = {};
@@ -1677,7 +1685,7 @@
             
             const exportData = {
                 generated: new Date().toISOString(),
-                sessionId: sessionId,
+                sessionId: SESSION_ID,
                 analytics: analytics,
                 actions: actions,
                 transcripts: transcripts
