@@ -1076,23 +1076,32 @@
 
         // Send message
         async function sendMessage() {
+            console.log('Send button clicked');
             const text = chatInput.value.trim();
-            if (!text || isProcessing) return;
+            console.log('Message text:', text);
+            if (!text || isProcessing) {
+                console.log('Not sending: empty or processing');
+                return;
+            }
 
             isProcessing = true;
             chatInput.value = '';
-            
+
             // Show user message immediately
             addMessage(text, true);
-            
+            console.log('User message added to UI');
+
             // Show typing indicator
             typingIndicator.classList.add('show');
             messagesContainer.appendChild(typingIndicator);
             maybeScrollToBottom(false);
-            
-            updateStatus('◉ PROCESSING', true);
 
-            const result = await api.sendMessage(sessionId, text);
+            updateStatus('◉ PROCESSING', true);
+            console.log('Sent to processing, calling API');
+
+            try {
+                const result = await api.sendMessage(sessionId, text);
+                console.log('SendMessage API result:', result);
             
             // Hide typing indicator
             typingIndicator.classList.remove('show');
@@ -1149,6 +1158,12 @@
                     chatInput.focus();
                 }
             }, 100);
+            } catch (error) {
+                console.error('Error in sendMessage:', error);
+                addMessage('⚠️ An error occurred. Please try again.', false);
+                updateStatus('◉ ERROR');
+                isProcessing = false;
+            }
         }
 
         // Event listeners

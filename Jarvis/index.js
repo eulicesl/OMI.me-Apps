@@ -148,24 +148,8 @@ app.use((req, res, next) => {
     next();
 });
 
-app.use(helmet({
-    contentSecurityPolicy: {
-        directives: {
-            defaultSrc: ["'self'"],
-            scriptSrc: [
-                "'self'", 
-                (req, res) => `'nonce-${res.locals.nonce}'`, 
-                "'unsafe-inline'",
-                "https://cdn.jsdelivr.net/npm/marked/",
-                "https://cdn.jsdelivr.net/npm/dompurify@3.1.6/"
-            ],
-            styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
-            fontSrc: ["'self'", "https://fonts.gstatic.com"],
-            connectSrc: ["'self'", "https://api.openai.com", "https://openrouter.ai", "https://api.omi.me", process.env.SUPABASE_URL],
-            imgSrc: ["'self'", "data:", "https:"],
-            upgradeInsecureRequests: process.env.NODE_ENV === 'production' ? [] : null
-        }
-    },
+app.use(helmet({ 
+    contentSecurityPolicy: false,  // Completely disable CSP for now - TODO: Add proper nonces
     hsts: {
         maxAge: 31536000,
         includeSubDomains: true,
@@ -756,36 +740,36 @@ app.get('/api/transcripts', security.validateUid, async (req, res) => {
                 
                 if (omiApiKey) {
                     // Fetch memories from OMI API with user's personal key
-                    const omiResponse = await fetch(`${omiBaseUrl}/v3/memories?limit=50&offset=0`, {
-                        method: 'GET',
-                        headers: {
-                            'Authorization': `Bearer ${omiApiKey}`,
-                            'Content-Type': 'application/json'
-                        }
-                    });
+                const omiResponse = await fetch(`${omiBaseUrl}/v3/memories?limit=50&offset=0`, {
+                    method: 'GET',
+                    headers: {
+                        'Authorization': `Bearer ${omiApiKey}`,
+                        'Content-Type': 'application/json'
+                    }
+                });
 
-                    if (omiResponse.ok) {
-                        const memories = await omiResponse.json();
-                        
+                if (omiResponse.ok) {
+                    const memories = await omiResponse.json();
+                    
                         // Update last used timestamp
                         await supabase
                             .from('user_settings')
                             .update({ key_last_used: new Date().toISOString() })
                             .eq('uid', uid);
                         
-                        // Format OMI memories as transcripts for the frontend
-                        const transcripts = (memories || []).map(memory => ({
-                            id: memory.id,
-                            text: memory.content || memory.transcript || '',
-                            created: memory.created_at || memory.created || new Date().toISOString(),
-                            session_id: memory.session_id || `omi-${memory.id}`,
-                            source: 'omi_device',
-                            category: memory.category,
-                            metadata: memory.metadata || {}
-                        }));
+                    // Format OMI memories as transcripts for the frontend
+                    const transcripts = (memories || []).map(memory => ({
+                        id: memory.id,
+                        text: memory.content || memory.transcript || '',
+                        created: memory.created_at || memory.created || new Date().toISOString(),
+                        session_id: memory.session_id || `omi-${memory.id}`,
+                        source: 'omi_device',
+                        category: memory.category,
+                        metadata: memory.metadata || {}
+                    }));
 
-                        console.log(`Fetched ${transcripts.length} memories from OMI for UID: ${uid}`);
-                        return res.json(transcripts);
+                    console.log(`Fetched ${transcripts.length} memories from OMI for UID: ${uid}`);
+                    return res.json(transcripts);
                     }
                 }
             } catch (omiError) {
@@ -1332,15 +1316,15 @@ app.post('/api/chat/message', security.validateUid, security.validateTextInput, 
 
         // Persist (best-effort)
         try {
-            const { error } = await supabase
-                .from('jarvis_sessions')
-                .update({
-                    uid,
-                    messages,
-                    last_activity: new Date().toISOString()
-                })
-                .eq('session_id', sessionId);
-            if (error) throw error;
+        const { error } = await supabase
+            .from('jarvis_sessions')
+            .update({
+                uid,
+                messages,
+                last_activity: new Date().toISOString()
+            })
+            .eq('session_id', sessionId);
+        if (error) throw error;
         } catch (persistErr) {
             console.error('Persist chat failed (non-fatal):', persistErr);
         }
