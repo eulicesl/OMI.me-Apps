@@ -849,29 +849,34 @@ app.get('/api/omi/settings', security.validateUid, async (req, res) => {
 });
 
 // Save or update OMI API key (with CSRF protection)
-app.post('/api/omi/key', security.validateUid, requireCsrf, async (req, res) => {
+app.post('/api/omi/key', security.validateUid, async (req, res) => {
     const uid = req.uid;
-    const { api_key } = req.body;
+    const { api_key, test_only } = req.body;
     const clientIp = req.ip || req.connection.remoteAddress;
-    
+
+    // Only require CSRF for actual key saving (not testing)
+    if (!test_only && !validateCsrfToken(uid, req.headers['x-csrf-token'])) {
+        return res.status(403).json({ error: 'Invalid or missing CSRF token' });
+    }
+
     // Check lockout
     if (isLockedOut(uid)) {
         logAuditEvent('OMI_KEY_LOCKOUT', uid, { ip: clientIp });
-        return res.status(429).json({ 
-            error: 'Too many failed attempts. Please try again later.' 
+        return res.status(429).json({
+            error: 'Too many failed attempts. Please try again later.'
         });
     }
-    
+
     if (!api_key) {
         return res.status(400).json({ error: 'API key required' });
     }
-    
+
     if (!validateOmiApiKey(api_key)) {
         trackFailedKeyAttempt(uid);
         logAuditEvent('OMI_KEY_INVALID', uid, { ip: clientIp });
         return res.status(400).json({ error: 'Invalid API key format' });
     }
-    
+
     try {
         // Test the API key first
         const testResponse = await fetch('https://api.omi.me/v3/memories?limit=1', {
@@ -879,22 +884,28 @@ app.post('/api/omi/key', security.validateUid, requireCsrf, async (req, res) => 
                 'Authorization': `Bearer ${api_key}`
             }
         });
-        
+
         if (!testResponse.ok) {
             trackFailedKeyAttempt(uid);
-            logAuditEvent('OMI_KEY_TEST_FAILED', uid, { 
+            logAuditEvent('OMI_KEY_TEST_FAILED', uid, {
                 ip: clientIp,
-                status: testResponse.status 
+                status: testResponse.status
             });
             return res.status(400).json({ error: 'Invalid or unauthorized API key' });
         }
-        
+
         // Clear failed attempts on success
         clearFailedKeyAttempts(uid);
-        
+
+        // If this is just a test, don't save the key
+        if (test_only) {
+            logAuditEvent('OMI_KEY_VALIDATION_PASSED', uid, { ip: clientIp });
+            return res.json({ success: true, message: 'API key validation successful', validated_only: true });
+        }
+
         // Encrypt the key
         const encryptedKey = encrypt(api_key);
-        
+
         // Store in database
         const { error } = await supabase
             .from('user_settings')
@@ -904,12 +915,12 @@ app.post('/api/omi/key', security.validateUid, requireCsrf, async (req, res) => 
                 omi_enabled: true,
                 key_added_at: new Date().toISOString()
             }, { onConflict: 'uid' });
-        
+
         if (error) {
             console.error('Error saving OMI key:', error);
             return res.status(500).json({ error: 'Failed to save API key' });
         }
-        
+
         logAuditEvent('OMI_KEY_ADDED', uid, { ip: clientIp });
         res.json({ success: true, message: 'OMI API key saved successfully' });
     } catch (error) {

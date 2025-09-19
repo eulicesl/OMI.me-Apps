@@ -82,17 +82,17 @@ function decrypt(payload) {
 /**
  * Validate OMI/OpenRouter API key formats
  * Accepts:
- * - sk_XXXXXXXX (32-64 base62) for generic providers
- * - omi_mcp_XXXXXXXX (16-64 base62/hex) for OMI MCP keys
- * - omi_XXXXXXXX (24-64 base62) for other OMI keys
+ * - sk_XXXXXXXX (16-256 URL-safe) for generic providers
+ * - omi_mcp_XXXXXXXX (8-256 URL-safe) for OMI MCP keys (e.g. omi_mcp_sk_live_...)
+ * - omi_XXXXXXXX (16-256 URL-safe) for other OMI keys
  */
 function validateOmiApiKey(apiKey) {
     if (!apiKey || typeof apiKey !== 'string') return false;
     const key = apiKey.trim();
     const patterns = [
-        /^sk_[A-Za-z0-9]{32,64}$/,
-        /^omi_mcp_[A-Za-z0-9]{16,64}$/,
-        /^omi_[A-Za-z0-9]{24,64}$/
+        /^sk_[A-Za-z0-9_-]{16,256}$/,
+        /^omi_mcp_[A-Za-z0-9_-]{8,256}$/,
+        /^omi_[A-Za-z0-9_-]{16,256}$/
     ];
     return patterns.some(re => re.test(key));
 }
