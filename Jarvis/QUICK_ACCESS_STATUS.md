@@ -33,7 +33,7 @@
 
 **Direct Link with Authentication:**
 ```
-https://jarvis-app-k4xoe.ondigitalocean.app/?uid=rg0PvY9mhKRARcYxkHHYh4iAkc12
+https://jarvis
 ```
 
 ## 🎨 UI Components Confirmed
