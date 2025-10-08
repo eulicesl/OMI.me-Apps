@@ -1,4 +1,0 @@
-[dotenv@17.2.1] injecting env (6) from .env -- tip: ⚙️  write to custom object with { processEnv: myObject }
-(node:38755) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
-(Use `node --trace-deprecation ...` to show where the warning was created)
-Jarvis app listening at http://localhost:3001
